@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block login_content %}
+<div class="container-fluid vh-100">
+  <div class="row h-100 justify-content-center align-items-center">
+    <div class="col-auto">
+      <div class="bg-white p-4 rounded shadow" style="max-width: 400px;">
+        <h2 class="mb-4 text-center">Registrarse</h2>
+        <form method="post">
+            {% csrf_token %}
+            {{ form.non_field_errors }}
+            <div class="mb-3 row align-items-center">
+              <label class="col-5 col-form-label">{{ form.username.label }}</label>
+              <div class="col-7">
+                {{ form.username }}
+                {{ form.username.errors }}
+              </div>
+            </div>
+            <div class="mb-3 row align-items-center">
+              <label class="col-5 col-form-label">{{ form.email.label }}</label>
+              <div class="col-7">
+                {{ form.email }}
+                {{ form.email.errors }}
+              </div>
+            </div>
+            <div class="mb-3 row align-items-center">
+              <label class="col-5 col-form-label">{{ form.password1.label }}</label>
+              <div class="col-7">
+                {{ form.password1 }}
+                {{ form.password1.errors }}
+              </div>
+            </div>
+            <div class="mb-3 row align-items-center">
+              <label class="col-5 col-form-label">{{ form.password2.label }}</label>
+              <div class="col-7">
+                {{ form.password2 }}
+                {{ form.password2.errors }}
+              </div>
+            </div>
+            <div class="mb-3 row align-items-center">
+              <label class="col-5 col-form-label">{{ form.tipo_usuario.label }}</label>
+              <div class="col-7">
+                {{ form.tipo_usuario }}
+                {{ form.tipo_usuario.errors }}
+              </div>
+            </div>
+            <button type="submit" class="w-100 btn btn-primary mb-2">Registrarme</button>
+        </form>
+        <p class="text-center"><a href="{% url 'login' %}">Volver al login</a></p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

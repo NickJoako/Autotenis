@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Mis Torneos</h2>
+<ul class="list-group">
+  {% for torneo in torneos %}
+    <li class="list-group-item">{{ torneo.nombre }} - {{ torneo.fecha }}</li>
+  {% empty %}
+    <li class="list-group-item">No tienes torneos creados.</li>
+  {% endfor %}
+</ul>
+{% endblock %}

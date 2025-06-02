@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block login_content %}
+<div class="container-fluid vh-100">
+  <div class="row h-100 justify-content-center align-items-center">
+    <div class="col-auto">
+      <div class="bg-white p-4 rounded shadow" style="max-width: 350px;">
+        <form method="post" class="text-center">
+          {% csrf_token %}
+          <img class="mb-4" src="{% static 'gestiontorneo/logo.svg' %}" alt="" width="72" height="57">
+          <h1 class="h3 mb-3 fw-normal">Iniciar sesión</h1>
+
+          <div class="form-floating mb-2">
+            <input type="text" name="username" class="form-control" id="floatingInput" placeholder="Usuario" required autofocus>
+            <label for="floatingInput">Nombre de usuario</label>
+          </div>
+          <div class="form-floating mb-2">
+            <input type="password" name="password" class="form-control" id="floatingPassword" placeholder="Contraseña" required>
+            <label for="floatingPassword">Contraseña</label>
+          </div>
+
+          {% if form.errors %}
+            <div class="alert alert-danger mt-2">Credenciales incorrectas</div>
+          {% endif %}
+
+          <button class="w-100 btn btn-lg btn-primary mb-2" type="submit">Ingresar</button>
+          <a href="{% url 'registro' %}" class="w-100 btn btn-lg btn-outline-secondary">Registrarse</a>
+          <p class="mt-5 mb-3 text-muted">&copy; 2025 AutoTenis</p>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
