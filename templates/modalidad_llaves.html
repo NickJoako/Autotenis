@@ -74,7 +74,8 @@
     <div class="text-center">
       <form method="post" style="display: inline;">
         {% csrf_token %}
-        <button type="" name="iniciar_llaves" class="btn btn-warning btn-lg me-3 mb-2">
+        <button type="submit" name="iniciar_llaves" class="btn btn-warning btn-lg me-3 mb-2"
+          onclick="return confirm('¿Estás seguro de que quieres iniciar el torneo por llaves? Esta acción bloqueará la modalidad y no podrás cambiarla después.');">
           <i class="fas fa-play"></i> Iniciar Torneo con Llaves
         </button>
       </form>

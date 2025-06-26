@@ -17,6 +17,8 @@
           {% if torneo.inscripciones_cerradas %}
             {% if torneo.modalidad == 'grupos' %}
               <a href="{% url 'organizar_grupos' torneo.id %}" class="btn btn-primary btn-sm">Definir grupos</a>
+            {% elif torneo.modalidad == 'llaves' %}
+              <a href="{% url 'organizar_llaves' torneo.id %}" class="btn btn-warning btn-sm">Definir llaves</a>
             {% else %}
               <a href="{% url 'listado_participantes' torneo.id %}" class="btn btn-info btn-sm">Ver participantes</a>
             {% endif %}
@@ -27,6 +29,8 @@
           {% if torneo.inscripciones_cerradas %}
             {% if torneo.modalidad == 'grupos' %}
               <a href="{% url 'organizar_grupos' torneo.id %}" class="btn btn-primary btn-sm">Definir grupos</a>
+            {% elif torneo.modalidad == 'llaves' %}
+              <a href="{% url 'organizar_llaves' torneo.id %}" class="btn btn-warning btn-sm">Definir llaves</a>
             {% else %}
               <a href="{% url 'listado_participantes' torneo.id %}" class="btn btn-info btn-sm">Ver participantes</a>
             {% endif %}

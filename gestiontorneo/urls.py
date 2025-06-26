@@ -22,8 +22,10 @@ urlpatterns = [
     path('torneos/<int:torneo_id>/modalidad/grupos/', views.modalidad_grupos, name='modalidad_grupos'),
     # URLs para organización de grupos
     path('torneos/<int:torneo_id>/organizar-grupos/', views.organizar_grupos, name='organizar_grupos'),
+    path('torneos/<int:torneo_id>/organizar-llaves/', views.organizar_llaves, name='organizar_llaves'),
     path('torneos/<int:torneo_id>/definir-cabezas-serie/', views.definir_cabezas_serie, name='definir_cabezas_serie'),
     # URLs para llaves
+    path('torneos/<int:torneo_id>/definir-llaves/', views.definir_llaves, name='definir_llaves'),
     path('torneos/<int:torneo_id>/vista-previa-asignacion/', views.vista_previa_asignacion, name='vista_previa_asignacion'),
     path('torneos/<int:torneo_id>/vista-previa-asignacion-pagina/', views.vista_previa_asignacion_pagina, name='vista_previa_asignacion_pagina'),
 ]

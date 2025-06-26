@@ -15,7 +15,7 @@ from datetime import datetime
 import math
 import unicodedata
 from django.http import HttpResponseRedirect, HttpResponse, JsonResponse, JsonResponse
-from .models import GrupoTorneo, ParticipanteGrupo
+from .models import GrupoTorneo, ParticipanteGrupo, LlaveTorneo, JugadorBye
 
 # Create your views here.
 
@@ -457,14 +457,18 @@ def ingresar_participantes(request, torneo_id):
 def listado_participantes(request, torneo_id):
     torneo = get_object_or_404(Torneo, id=torneo_id, organizador=request.user)
     participantes = [p.jugador for p in torneo.participaciones.select_related('jugador')]
-    
+
     # Manejar el cerrar inscripciones
     if request.method == "POST" and "cerrar_inscripciones" in request.POST and not torneo.inscripciones_cerradas:
+        if len(participantes) < 3:
+            messages.error(request, "No puedes cerrar las inscripciones. Debe haber al menos 3 jugadores inscritos.")
+            return redirect('listado_participantes', torneo_id=torneo.id)
+        
         torneo.inscripciones_cerradas = True
         torneo.save()
         messages.success(request, "Las inscripciones han sido cerradas. Ya no se pueden agregar o eliminar participantes.")
         return redirect('listado_participantes', torneo_id=torneo.id)
-    
+
     return render(request, "listado_participantes.html", {"torneo": torneo, "participantes": participantes})
 
 @login_required
@@ -497,6 +501,18 @@ def modalidad_llaves(request, torneo_id):
     if not torneo.inscripciones_cerradas:
         messages.error(request, "Debes cerrar las inscripciones antes de seleccionar una modalidad.")
         return redirect('gestionar_torneo', torneo_id=torneo.id)
+    
+    # Si el torneo ya ha iniciado, redirigir a la gestión de llaves
+    if torneo.torneo_iniciado and torneo.modalidad == 'llaves':
+        return redirect('organizar_llaves', torneo_id=torneo.id)
+        
+    # Manejar el inicio del torneo por llaves
+    if request.method == 'POST' and 'iniciar_llaves' in request.POST:
+        torneo.modalidad = 'llaves'
+        torneo.torneo_iniciado = True
+        torneo.save()
+        messages.success(request, "¡Torneo iniciado en modalidad de llaves! Ahora puedes organizar las llaves.")
+        return redirect('organizar_llaves', torneo_id=torneo.id)
     
     # Calcular datos del bracket dinámicamente
     num_participantes = torneo.participaciones.count()
@@ -1560,4 +1576,470 @@ def vista_previa_asignacion_pagina(request, torneo_id):
     }
     
     return render(request, 'vista_previa_asignacion.html', context)
+
+@login_required
+def organizar_llaves(request, torneo_id):
+    torneo = get_object_or_404(Torneo, id=torneo_id, organizador=request.user)
+    
+    # Verificar que el torneo esté en modalidad llaves
+    if torneo.modalidad != 'llaves' or not torneo.torneo_iniciado:
+        messages.error(request, "El torneo no está en modalidad de llaves o no ha sido iniciado.")
+        return redirect('gestionar_torneo', torneo_id=torneo.id)
+    
+    participantes = list(torneo.participaciones.select_related('jugador').all())
+    num_participantes = len(participantes)
+    
+    # Calcular la potencia de 2 más cercana (hacia arriba)
+    potencia_2_siguiente = 2 ** math.ceil(math.log2(max(num_participantes, 2)))
+    
+    # Calcular BYE necesarias
+    byes_necesarias = potencia_2_siguiente - num_participantes if num_participantes > 0 else 0
+    
+    # Calcular número de rondas
+    rondas_necesarias = math.ceil(math.log2(potencia_2_siguiente)) if num_participantes > 1 else 1
+    
+    # Determinar si es un bracket perfecto (potencia de 2)
+    es_bracket_perfecto = num_participantes > 0 and (num_participantes & (num_participantes - 1)) == 0
+    
+    # Verificar si ya existen llaves asignadas
+    llaves_asignadas = torneo.llaves.filter(ronda=1).exists()
+    llaves_primera_ronda = torneo.llaves.filter(ronda=1).select_related('jugador1', 'jugador2', 'bye1', 'bye2') if llaves_asignadas else []
+    
+    # Manejar asignación de llaves
+    if request.method == 'POST':
+        if 'definir_llaves_manual' in request.POST:
+            return redirect('definir_llaves', torneo_id=torneo.id)
+        elif 'asignar_automatico' in request.POST:
+            return asignar_llaves_automatico(request, torneo, participantes, potencia_2_siguiente, byes_necesarias)
+        elif 'reconfigurar_llaves' in request.POST:
+            # Limpiar todas las llaves existentes
+            torneo.llaves.all().delete()
+            torneo.byes.all().delete()
+            messages.info(request, "Las llaves han sido eliminadas. Puedes asignar nuevamente.")
+            return redirect('organizar_llaves', torneo_id=torneo.id)
+    
+    context = {
+        'torneo': torneo,
+        'participantes': participantes,
+        'num_participantes': num_participantes,
+        'potencia_2_siguiente': potencia_2_siguiente,
+        'byes_necesarias': byes_necesarias,
+        'rondas_necesarias': rondas_necesarias,
+        'es_bracket_perfecto': es_bracket_perfecto,
+        'llaves_asignadas': llaves_asignadas,
+        'llaves_primera_ronda': llaves_primera_ronda,
+    }
+    
+    return render(request, 'organizar_llaves.html', context)
+
+
+@login_required
+def definir_llaves(request, torneo_id):
+    torneo = get_object_or_404(Torneo, id=torneo_id, organizador=request.user)
+    
+    # Verificar que el torneo esté en modalidad llaves
+    if torneo.modalidad != 'llaves' or not torneo.torneo_iniciado:
+        messages.error(request, "El torneo no está en modalidad de llaves o no ha sido iniciado.")
+        return redirect('gestionar_torneo', torneo_id=torneo.id)
+    
+    participantes = list(torneo.participaciones.select_related('jugador').all())
+    num_participantes = len(participantes)
+    
+    # Calcular la potencia de 2 más cercana (hacia arriba)
+    potencia_2_siguiente = 2 ** math.ceil(math.log2(max(num_participantes, 2)))
+    
+    # Calcular BYE necesarias
+    byes_necesarias = potencia_2_siguiente - num_participantes if num_participantes > 0 else 0
+    
+    # Calcular número de rondas
+    rondas_necesarias = math.ceil(math.log2(potencia_2_siguiente)) if num_participantes > 1 else 1
+    
+    # Determinar si es un bracket perfecto (potencia de 2)
+    es_bracket_perfecto = num_participantes > 0 and (num_participantes & (num_participantes - 1)) == 0
+    
+    # Crear lista de enfrentamientos para la primera ronda
+    num_enfrentamientos = potencia_2_siguiente // 2
+    enfrentamientos = []
+    for i in range(1, num_enfrentamientos + 1):
+        enfrentamientos.append({
+            'numero': i,
+            'jugador1': None,
+            'jugador2': None,
+            'es_bye1': False,
+            'es_bye2': False
+        })
+    
+    # Verificar si ya existen llaves asignadas para la primera ronda
+    try:
+        llaves_existentes = torneo.llaves.filter(ronda=1)
+        if llaves_existentes.exists():
+            # Cargar asignaciones existentes
+            for llave in llaves_existentes:
+                if llave.posicion <= len(enfrentamientos):
+                    pos_index = llave.posicion - 1
+                    if llave.jugador1:
+                        enfrentamientos[pos_index]['jugador1'] = llave.jugador1
+                    elif llave.bye1:
+                        enfrentamientos[pos_index]['es_bye1'] = True
+                    
+                    if llave.jugador2:
+                        enfrentamientos[pos_index]['jugador2'] = llave.jugador2
+                    elif llave.bye2:
+                        enfrentamientos[pos_index]['es_bye2'] = True
+    except Exception as e:
+        # Si hay un problema con la tabla, simplemente continuar sin cargar llaves existentes
+        print(f"Error al cargar llaves existentes: {e}")
+        pass
+    
+    if request.method == 'POST':
+        if 'guardar_asignacion' in request.POST:
+            try:
+                # Limpiar asignaciones previas de la primera ronda
+                torneo.llaves.filter(ronda=1).delete()
+                torneo.byes.all().delete()
+                
+                # Recopilar jugadores ya asignados
+                jugadores_asignados = set()
+                asignaciones_manuales = {}
+                
+                # Primero, procesar las asignaciones manuales del formulario
+                for i in range(num_enfrentamientos):
+                    posicion = i + 1
+                    jugador1_id = request.POST.get(f'jugador1_posicion_{posicion}')
+                    jugador2_id = request.POST.get(f'jugador2_posicion_{posicion}')
+                    es_bye1 = request.POST.get(f'bye1_posicion_{posicion}')
+                    es_bye2 = request.POST.get(f'bye2_posicion_{posicion}')
+                    
+                    asignaciones_manuales[posicion] = {
+                        'jugador1_id': jugador1_id,
+                        'jugador2_id': jugador2_id,
+                        'es_bye1': es_bye1,
+                        'es_bye2': es_bye2
+                    }
+                    
+                    # Agregar jugadores asignados al set
+                    if jugador1_id:
+                        jugadores_asignados.add(int(jugador1_id))
+                    if jugador2_id:
+                        jugadores_asignados.add(int(jugador2_id))
+                
+                # Obtener jugadores disponibles para asignación automática
+                todas_participaciones = list(torneo.participaciones.all())
+                participaciones_disponibles = [p for p in todas_participaciones if p.id not in jugadores_asignados]
+                
+                # Mezclar para asignación aleatoria
+                import random
+                random.shuffle(participaciones_disponibles)
+                
+                # Contar BYEs ya asignados manualmente
+                byes_asignados_manualmente = 0
+                for pos_data in asignaciones_manuales.values():
+                    if pos_data['es_bye1']:
+                        byes_asignados_manualmente += 1
+                    if pos_data['es_bye2']:
+                        byes_asignados_manualmente += 1
+                
+                # Calcular BYEs restantes necesarios
+                byes_restantes = max(0, byes_necesarias - byes_asignados_manualmente)
+                
+                # Crear una estrategia de distribución inteligente para BYEs
+                # 1. Primero identificar todas las posiciones vacías
+                posiciones_vacias = []
+                for i in range(num_enfrentamientos):
+                    posicion = i + 1
+                    asignacion = asignaciones_manuales[posicion]
+                    
+                    # Verificar qué posiciones están vacías en cada enfrentamiento
+                    if not asignacion['jugador1_id'] and not asignacion['es_bye1']:
+                        posiciones_vacias.append((posicion, 1))  # (enfrentamiento, posición_en_enfrentamiento)
+                    if not asignacion['jugador2_id'] and not asignacion['es_bye2']:
+                        posiciones_vacias.append((posicion, 2))
+                
+                # 2. Mezclar posiciones vacías para distribución aleatoria
+                random.shuffle(posiciones_vacias)
+                
+                # 3. Crear lista de asignaciones automáticas
+                elementos_automaticos = []
+                
+                # Agregar jugadores disponibles
+                for participacion in participaciones_disponibles:
+                    elementos_automaticos.append(('jugador', participacion))
+                
+                # Agregar BYEs necesarios
+                for _ in range(byes_restantes):
+                    elementos_automaticos.append(('bye', None))
+                
+                # 4. Mezclar elementos
+                random.shuffle(elementos_automaticos)
+                
+                # 5. Distribuir elementos de forma inteligente evitando BYE vs BYE
+                asignaciones_automaticas = {}
+                elementos_index = 0
+                
+                # Primero, asignar jugadores y BYEs de forma que se evite BYE vs BYE
+                for posicion_info in posiciones_vacias:
+                    enfrentamiento, pos_en_enfrentamiento = posicion_info
+                    
+                    if elementos_index >= len(elementos_automaticos):
+                        break
+                    
+                    tipo, elemento = elementos_automaticos[elementos_index]
+                    
+                    # Verificar si crear BYE vs BYE
+                    if tipo == 'bye':
+                        # Buscar si ya hay un BYE asignado en este enfrentamiento
+                        asignacion_actual = asignaciones_manuales[enfrentamiento]
+                        otra_posicion = 1 if pos_en_enfrentamiento == 2 else 2
+                        
+                        # Verificar asignaciones manuales
+                        hay_bye_manual = (asignacion_actual['es_bye1'] if otra_posicion == 1 else asignacion_actual['es_bye2'])
+                        
+                        # Verificar asignaciones automáticas previas
+                        hay_bye_automatico = False
+                        if enfrentamiento in asignaciones_automaticas:
+                            hay_bye_automatico = asignaciones_automaticas[enfrentamiento].get(otra_posicion, {}).get('tipo') == 'bye'
+                        
+                        if hay_bye_manual or hay_bye_automatico:
+                            # Ya hay un BYE, buscar un jugador en su lugar
+                            jugador_encontrado = False
+                            for j in range(elementos_index + 1, len(elementos_automaticos)):
+                                if elementos_automaticos[j][0] == 'jugador':
+                                    # Intercambiar posiciones
+                                    elementos_automaticos[elementos_index], elementos_automaticos[j] = elementos_automaticos[j], elementos_automaticos[elementos_index]
+                                    tipo, elemento = elementos_automaticos[elementos_index]
+                                    jugador_encontrado = True
+                                    break
+                            
+                            # Si no se encontró jugador, mantener el BYE pero marcarlo para revisión posterior
+                            if not jugador_encontrado:
+                                pass  # Mantener el BYE, se manejará después
+                    
+                    # Guardar asignación automática
+                    if enfrentamiento not in asignaciones_automaticas:
+                        asignaciones_automaticas[enfrentamiento] = {}
+                    
+                    asignaciones_automaticas[enfrentamiento][pos_en_enfrentamiento] = {
+                        'tipo': tipo,
+                        'elemento': elemento
+                    }
+                    
+                    elementos_index += 1
+                
+                # Guardar nuevas asignaciones con la nueva estrategia
+                byes_creados = 0
+                
+                for i in range(num_enfrentamientos):
+                    posicion = i + 1
+                    asignacion = asignaciones_manuales[posicion]
+                    
+                    # Preparar objetos para la llave
+                    jugador1_obj = None
+                    jugador2_obj = None
+                    bye1_obj = None
+                    bye2_obj = None
+                    
+                    # Procesar jugador 1 (manual o automático)
+                    if asignacion['jugador1_id']:
+                        # Asignación manual
+                        try:
+                            participacion = torneo.participaciones.get(id=asignacion['jugador1_id'])
+                            jugador1_obj = participacion.jugador
+                        except:
+                            pass
+                    elif asignacion['es_bye1']:
+                        # BYE manual
+                        byes_creados += 1
+                        bye1_obj = JugadorBye.objects.create(
+                            nombre="BYE",
+                            posicion_bye=byes_creados,
+                            torneo=torneo
+                        )
+                    else:
+                        # Asignación automática para posición vacía
+                        if posicion in asignaciones_automaticas and 1 in asignaciones_automaticas[posicion]:
+                            auto_data = asignaciones_automaticas[posicion][1]
+                            
+                            if auto_data['tipo'] == 'jugador':
+                                jugador1_obj = auto_data['elemento'].jugador
+                            elif auto_data['tipo'] == 'bye':
+                                byes_creados += 1
+                                bye1_obj = JugadorBye.objects.create(
+                                    nombre="BYE",
+                                    posicion_bye=byes_creados,
+                                    torneo=torneo
+                                )
+                    
+                    # Procesar jugador 2 (manual o automático)
+                    if asignacion['jugador2_id']:
+                        # Asignación manual
+                        try:
+                            participacion = torneo.participaciones.get(id=asignacion['jugador2_id'])
+                            jugador2_obj = participacion.jugador
+                        except:
+                            pass
+                    elif asignacion['es_bye2']:
+                        # BYE manual
+                        byes_creados += 1
+                        bye2_obj = JugadorBye.objects.create(
+                            nombre="BYE",
+                            posicion_bye=byes_creados,
+                            torneo=torneo
+                        )
+                    else:
+                        # Asignación automática para posición vacía
+                        if posicion in asignaciones_automaticas and 2 in asignaciones_automaticas[posicion]:
+                            auto_data = asignaciones_automaticas[posicion][2]
+                            
+                            if auto_data['tipo'] == 'jugador':
+                                jugador2_obj = auto_data['elemento'].jugador
+                            elif auto_data['tipo'] == 'bye':
+                                byes_creados += 1
+                                bye2_obj = JugadorBye.objects.create(
+                                    nombre="BYE",
+                                    posicion_bye=byes_creados,
+                                    torneo=torneo
+                                )
+                    
+                    # Crear la llave (siempre crear, aunque esté vacía)
+                    LlaveTorneo.objects.create(
+                        torneo=torneo,
+                        ronda=1,
+                        posicion=posicion,
+                        jugador1=jugador1_obj,
+                        jugador2=jugador2_obj,
+                        bye1=bye1_obj,
+                        bye2=bye2_obj
+                    )
+            
+                messages.success(request, "Las llaves han sido definidas correctamente. Los espacios vacíos fueron completados automáticamente.")
+                return redirect('organizar_llaves', torneo_id=torneo.id)
+            except Exception as e:
+                messages.error(request, f"Error al guardar las llaves: {str(e)}")
+                print(f"Error al guardar llaves: {e}")
+    
+    context = {
+        'torneo': torneo,
+        'participantes': participantes,
+        'num_participantes': num_participantes,
+        'potencia_2_siguiente': potencia_2_siguiente,
+        'byes_necesarias': byes_necesarias,
+        'rondas_necesarias': rondas_necesarias,
+        'es_bracket_perfecto': es_bracket_perfecto,
+        'enfrentamientos': enfrentamientos,
+        'num_enfrentamientos': num_enfrentamientos,
+    }
+    
+    return render(request, 'definir_llaves.html', context)
+
+def asignar_llaves_automatico(request, torneo, participantes, potencia_2_siguiente, byes_necesarias):
+    """
+    Asigna automáticamente los jugadores y BYEs a las llaves del torneo
+    Garantiza que los BYEs no se enfrenten entre sí
+    """
+    import random
+    
+    try:
+        # Limpiar asignaciones previas
+        torneo.llaves.filter(ronda=1).delete()
+        torneo.byes.all().delete()
+        
+        # Crear una lista mezclada de participantes
+        jugadores_mezclados = [p.jugador for p in participantes]
+        random.shuffle(jugadores_mezclados)
+        
+        # Crear BYEs necesarios
+        byes_objetos = []
+        for i in range(byes_necesarias):
+            bye_obj = JugadorBye.objects.create(
+                nombre="BYE",
+                posicion_bye=i + 1,
+                torneo=torneo
+            )
+            byes_objetos.append(bye_obj)
+        
+        # Calcular número de enfrentamientos en la primera ronda
+        num_enfrentamientos = potencia_2_siguiente // 2
+        
+        # ESTRATEGIA MEJORADA: Distribuir BYEs aleatoriamente evitando enfrentamientos BYE vs BYE
+        enfrentamientos = []
+        
+        # Crear estructura de enfrentamientos vacía
+        for i in range(num_enfrentamientos):
+            enfrentamientos.append({
+                'posicion': i + 1,
+                'jugador1': None,
+                'jugador2': None,
+                'bye1': None,
+                'bye2': None
+            })
+        
+        # Crear lista de todas las posiciones disponibles para BYEs
+        posiciones_disponibles = []
+        for i in range(num_enfrentamientos):
+            posiciones_disponibles.append((i, 1))  # (enfrentamiento_index, posicion_en_enfrentamiento)
+            posiciones_disponibles.append((i, 2))
+        
+        # Mezclar posiciones para distribución aleatoria
+        random.shuffle(posiciones_disponibles)
+        
+        # Asignar BYEs de forma que no haya BYE vs BYE
+        byes_asignados = 0
+        enfrentamientos_con_bye = set()
+        
+        for enfrentamiento_idx, posicion_en_enfrentamiento in posiciones_disponibles:
+            if byes_asignados >= len(byes_objetos):
+                break
+                
+            # Solo asignar BYE si este enfrentamiento no tiene ya un BYE
+            if enfrentamiento_idx not in enfrentamientos_con_bye:
+                if posicion_en_enfrentamiento == 1:
+                    enfrentamientos[enfrentamiento_idx]['bye1'] = byes_objetos[byes_asignados]
+                else:
+                    enfrentamientos[enfrentamiento_idx]['bye2'] = byes_objetos[byes_asignados]
+                
+                enfrentamientos_con_bye.add(enfrentamiento_idx)
+                byes_asignados += 1
+        
+        # Asignar jugadores a las posiciones restantes
+        jugador_index = 0
+        for enfrentamiento in enfrentamientos:
+            # Asignar jugador1 si no hay BYE1
+            if enfrentamiento['bye1'] is None and jugador_index < len(jugadores_mezclados):
+                enfrentamiento['jugador1'] = jugadores_mezclados[jugador_index]
+                jugador_index += 1
+            
+            # Asignar jugador2 si no hay BYE2
+            if enfrentamiento['bye2'] is None and jugador_index < len(jugadores_mezclados):
+                enfrentamiento['jugador2'] = jugadores_mezclados[jugador_index]
+                jugador_index += 1
+        
+        # Crear las llaves en la base de datos
+        for enfrentamiento in enfrentamientos:
+            # Validación adicional: Verificar que no hay BYE vs BYE
+            if enfrentamiento['bye1'] and enfrentamiento['bye2']:
+                # Si ocurre esto (no debería), mover un BYE a otro enfrentamiento
+                for otro_enfrentamiento in enfrentamientos:
+                    if otro_enfrentamiento != enfrentamiento and not otro_enfrentamiento['bye1'] and not otro_enfrentamiento['bye2']:
+                        # Mover BYE2 a este enfrentamiento vacío
+                        otro_enfrentamiento['bye1'] = enfrentamiento['bye2']
+                        enfrentamiento['bye2'] = None
+                        break
+            
+            LlaveTorneo.objects.create(
+                torneo=torneo,
+                ronda=1,
+                posicion=enfrentamiento['posicion'],
+                jugador1=enfrentamiento['jugador1'],
+                jugador2=enfrentamiento['jugador2'],
+                bye1=enfrentamiento['bye1'],
+                bye2=enfrentamiento['bye2'],
+                estado_partido='pendiente'
+            )
+        
+        messages.success(request, f"¡Asignación automática completada! Se han creado {num_enfrentamientos} enfrentamientos con {byes_necesarias} BYEs distribuidos aleatoriamente (sin enfrentamientos BYE vs BYE).")
+        return redirect('organizar_llaves', torneo_id=torneo.id)
+        
+    except Exception as e:
+        messages.error(request, f"Error en la asignación automática: {str(e)}")
+        return redirect('organizar_llaves', torneo_id=torneo.id)
 

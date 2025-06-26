@@ -1,0 +1,491 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="container">
+    <h2>Definir Llaves - {{ torneo.nombre }}</h2>
+    
+    {% if messages %}
+      {% for message in messages %}
+        <div class="alert alert-success alert-dismissible fade show" role="alert">
+          {{ message }}
+          <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+      {% endfor %}
+    {% endif %}
+    
+    <hr>
+    
+    <!-- Información del torneo -->
+    <div class="row mb-4">
+      <div class="col-md-12">
+        <div class="card border-info">
+          <div class="card-header bg-info text-white">
+            <h5 class="mb-0"><i class="fas fa-info-circle"></i> Información del Bracket</h5>
+          </div>
+          <div class="card-body">
+            <div class="row">
+              <div class="col-md-3">
+                <p><strong>Participantes:</strong> {{ num_participantes }} jugadores</p>
+              </div>
+              <div class="col-md-3">
+                <p><strong>Bracket total:</strong> {{ potencia_2_siguiente }} posiciones</p>
+              </div>
+              <div class="col-md-3">
+                <p><strong>BYE necesarias:</strong> 
+                  {% if es_bracket_perfecto %}
+                    0 (bracket perfecto)
+                  {% else %}
+                    {{ byes_necesarias }}
+                  {% endif %}
+                </p>
+              </div>
+              <div class="col-md-3">
+                <p><strong>Rondas:</strong> {{ rondas_necesarias }} rondas</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Formulario para asignar posiciones -->
+    <form method="post" id="asignacionForm">
+      {% csrf_token %}
+      
+      <div class="row">
+        <!-- Lista de participantes disponibles -->
+        <div class="col-md-4">
+          <div class="card border-success">
+            <div class="card-header bg-success text-white">
+              <h6 class="mb-0"><i class="fas fa-users"></i> Participantes Disponibles</h6>
+            </div>
+            <div class="card-body" style="max-height: 500px; overflow-y: auto;">
+              <div id="participantes-disponibles">
+                {% for participacion in participantes %}
+                  <div class="participante-item mb-2 p-2 border rounded" 
+                       draggable="true" 
+                       data-jugador-id="{{ participacion.id }}"
+                       data-jugador-nombre="{{ participacion.jugador.nombre }} {{ participacion.jugador.apellido }}"
+                       style="cursor: move; background-color: #f8f9fa;">
+                    <div class="d-flex justify-content-between align-items-center">
+                      <div>
+                        <strong>{{ participacion.jugador.nombre }} {{ participacion.jugador.apellido }}</strong>
+                        <br>
+                        <small class="text-muted">{{ participacion.jugador.calcular_categoria }}</small>
+                      </div>
+                      <i class="fas fa-grip-vertical text-muted"></i>
+                    </div>
+                  </div>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bracket de posiciones -->
+        <div class="col-md-8">
+          <div class="card border-primary">
+            <div class="card-header bg-primary text-white">
+              <h6 class="mb-0"><i class="fas fa-sitemap"></i> Asignación de Posiciones en el Bracket</h6>
+            </div>
+            <div class="card-body" style="max-height: 500px; overflow-y: auto;">
+              <div class="row">
+                {% for enfrentamiento in enfrentamientos %}
+                  <div class="col-md-6 mb-3">
+                    <div class="card match-card" data-match="{{ enfrentamiento.numero }}">
+                      <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                        <strong>Enfrentamiento {{ enfrentamiento.numero }}</strong>
+                        <button type="button" class="btn btn-sm btn-outline-danger limpiar-enfrentamiento" style="font-size: 0.7rem;">
+                          <i class="fas fa-times"></i> Limpiar
+                        </button>
+                      </div>
+                      <div class="card-body">
+                        <!-- Jugador 1 -->
+                        <div class="row mb-2">
+                          <div class="col-12">
+                            <label class="form-label"><strong>Jugador 1:</strong></label>
+                            <select class="form-select jugador-select" name="jugador1_posicion_{{ enfrentamiento.numero }}" id="jugador1_{{ enfrentamiento.numero }}">
+                              <option value="">Seleccionar jugador...</option>
+                              {% for participacion in participantes %}
+                                <option value="{{ participacion.id }}"
+                                  {% if enfrentamiento.jugador1 and enfrentamiento.jugador1.id == participacion.jugador.id %}selected{% endif %}>
+                                  {{ participacion.jugador.nombre }} {{ participacion.jugador.apellido }}
+                                </option>
+                              {% endfor %}
+                            </select>
+                            <div class="form-check mt-1">
+                              <input class="form-check-input bye-checkbox" type="checkbox" 
+                                     name="bye1_posicion_{{ enfrentamiento.numero }}" 
+                                     id="bye1_{{ enfrentamiento.numero }}"
+                                     {% if enfrentamiento.es_bye1 %}checked{% endif %}>
+                              <label class="form-check-label" for="bye1_{{ enfrentamiento.numero }}">
+                                BYE (pase automático)
+                              </label>
+                            </div>
+                            <div class="bye-warning mt-1" id="bye_warning_{{ enfrentamiento.numero }}" style="display: none;">
+                              <small class="text-danger">
+                                <i class="fas fa-exclamation-triangle"></i> 
+                                Un BYE no puede enfrentarse contra otro BYE
+                              </small>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <hr>
+                        
+                        <!-- Jugador 2 -->
+                        <div class="row">
+                          <div class="col-12">
+                            <label class="form-label"><strong>Jugador 2:</strong></label>
+                            <select class="form-select jugador-select" name="jugador2_posicion_{{ enfrentamiento.numero }}" id="jugador2_{{ enfrentamiento.numero }}">
+                              <option value="">Seleccionar jugador...</option>
+                              {% for participacion in participantes %}
+                                <option value="{{ participacion.id }}"
+                                  {% if enfrentamiento.jugador2 and enfrentamiento.jugador2.id == participacion.jugador.id %}selected{% endif %}>
+                                  {{ participacion.jugador.nombre }} {{ participacion.jugador.apellido }}
+                                </option>
+                              {% endfor %}
+                            </select>
+                            <div class="form-check mt-1">
+                              <input class="form-check-input bye-checkbox" type="checkbox" 
+                                     name="bye2_posicion_{{ enfrentamiento.numero }}" 
+                                     id="bye2_{{ enfrentamiento.numero }}"
+                                     {% if enfrentamiento.es_bye2 %}checked{% endif %}>
+                              <label class="form-check-label" for="bye2_{{ enfrentamiento.numero }}">
+                                BYE (pase automático)
+                              </label>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Información sobre asignación automática -->
+      <div class="row mt-3">
+        <div class="col-md-12">
+          <div class="alert alert-info">
+            <i class="fas fa-info-circle"></i> <strong>Asignación Estratégica:</strong> 
+            Asigna manualmente a los mejores jugadores en posiciones estratégicas para evitar que se enfrenten en rondas tempranas. 
+            Los espacios vacíos se completarán automáticamente de forma aleatoria al guardar.
+          </div>
+        </div>
+      </div>
+
+      <!-- Botones de acción -->
+      <div class="row mt-4">
+        <div class="col-md-12 text-center">
+          <button type="submit" name="guardar_asignacion" class="btn btn-primary btn-lg me-3" 
+                  title="Guarda las asignaciones manuales y completa automáticamente los espacios vacíos">
+            <i class="fas fa-save"></i> Guardar y Completar Automáticamente
+          </button>
+          <a href="{% url 'organizar_llaves' torneo.id %}" class="btn btn-secondary btn-lg">
+            <i class="fas fa-arrow-left"></i> Volver
+          </a>
+        </div>
+      </div>
+    </form>
+  </div>
+
+  <script>
+    // Variables globales
+    let participantesUsados = new Set();
+    const NUM_PARTICIPANTES = {{ num_participantes }};
+    const POTENCIA_2_SIGUIENTE = {{ potencia_2_siguiente }};
+    const BYES_NECESARIOS = {{ byes_necesarias }};
+
+    function actualizarParticipantesDisponibles() {
+      // Resetear todas las opciones
+      document.querySelectorAll('.jugador-select option').forEach(option => {
+        if (option.value !== '') {
+          option.disabled = false;
+          option.style.color = '';
+        }
+      });
+
+      // Deshabilitar participantes ya seleccionados
+      document.querySelectorAll('.jugador-select').forEach(select => {
+        if (select.value && select.value !== '') {
+          // Deshabilitar este jugador en otros selects
+          document.querySelectorAll('.jugador-select').forEach(otherSelect => {
+            if (otherSelect !== select) {
+              const option = otherSelect.querySelector(`option[value="${select.value}"]`);
+              if (option) {
+                option.disabled = true;
+                option.style.color = '#999';
+              }
+            }
+          });
+        }
+      });
+    }
+
+    function validarLimiteByes() {
+      const checkboxes = document.querySelectorAll('.bye-checkbox');
+      let byesContados = 0;
+
+      // Contar BYEs seleccionados
+      checkboxes.forEach(checkbox => {
+        if (checkbox.checked) {
+          byesContados++;
+        }
+      });
+
+      // Si no se necesitan BYEs, deshabilitar todos los checkboxes
+      if (BYES_NECESARIOS <= 0) {
+        checkboxes.forEach(checkbox => {
+          if (checkbox.checked) {
+            checkbox.checked = false;
+            // También limpiar el select correspondiente si estaba marcado como BYE
+            const enfrentamientoNum = checkbox.id.split('_')[1];
+            const esJugador1 = checkbox.id.includes('bye1');
+            const jugadorSelect = document.getElementById(`${esJugador1 ? 'jugador1' : 'jugador2'}_${enfrentamientoNum}`);
+            jugadorSelect.value = '';
+          }
+          checkbox.disabled = true;
+          const label = checkbox.nextElementSibling;
+          if (label) {
+            label.style.opacity = '0.5';
+            label.style.cursor = 'not-allowed';
+            label.title = 'No se requieren BYEs para este torneo (bracket perfecto)';
+          }
+        });
+        actualizarParticipantesDisponibles();
+        return;
+      }
+
+      // Manejar límite de BYEs cuando sí se necesitan
+      checkboxes.forEach(checkbox => {
+        const label = checkbox.nextElementSibling;
+        
+        // Si ya se alcanzó el máximo de BYEs, deshabilitar checkboxes no marcados
+        if (!checkbox.checked && byesContados >= BYES_NECESARIOS) {
+          checkbox.disabled = true;
+          if (label) {
+            label.style.opacity = '0.5';
+            label.style.cursor = 'not-allowed';
+            label.title = `Ya se han seleccionado los ${BYES_NECESARIOS} BYEs máximos permitidos`;
+          }
+        } else {
+          // Habilitar checkbox
+          checkbox.disabled = false;
+          if (label) {
+            label.style.opacity = '1';
+            label.style.cursor = 'pointer';
+            const restantes = Math.max(0, BYES_NECESARIOS - byesContados + (checkbox.checked ? 1 : 0));
+            label.title = `BYEs disponibles: ${restantes} de ${BYES_NECESARIOS} (los restantes se completarán automáticamente)`;
+          }
+        }
+      });
+
+      // Mostrar información de BYEs en la UI
+      actualizarInfoByes(byesContados);
+    }
+
+    function actualizarInfoByes(byesSeleccionados) {
+      // Actualizar el contador de BYEs si existe
+      let infoElement = document.getElementById('info-byes');
+      if (!infoElement) {
+        // Crear elemento de información si no existe
+        const infoCard = document.querySelector('.card-body');
+        if (infoCard) {
+          infoElement = document.createElement('div');
+          infoElement.id = 'info-byes';
+          infoElement.className = 'alert alert-info mt-2';
+          infoCard.appendChild(infoElement);
+        }
+      }
+      
+      if (infoElement) {
+        if (BYES_NECESARIOS <= 0) {
+          infoElement.innerHTML = '<i class="fas fa-info-circle"></i> <strong>Bracket perfecto:</strong> No se requieren BYEs.';
+          infoElement.className = 'alert alert-success mt-2';
+        } else {
+          const restantes = BYES_NECESARIOS - byesSeleccionados;
+          if (restantes > 0) {
+            infoElement.innerHTML = `<i class="fas fa-info-circle"></i> <strong>BYEs seleccionados:</strong> ${byesSeleccionados} de ${BYES_NECESARIOS}. Los ${restantes} BYEs restantes se asignarán automáticamente.`;
+            infoElement.className = 'alert alert-info mt-2';
+          } else {
+            infoElement.innerHTML = `<i class="fas fa-check-circle"></i> <strong>BYEs completos:</strong> ${byesSeleccionados} de ${BYES_NECESARIOS} seleccionados correctamente.`;
+            infoElement.className = 'alert alert-success mt-2';
+          }
+        }
+      }
+    }
+
+    function limpiarEnfrentamiento(enfrentamientoNum) {
+      document.getElementById(`jugador1_${enfrentamientoNum}`).value = '';
+      document.getElementById(`jugador2_${enfrentamientoNum}`).value = '';
+      document.getElementById(`bye1_${enfrentamientoNum}`).checked = false;
+      document.getElementById(`bye2_${enfrentamientoNum}`).checked = false;
+      actualizarParticipantesDisponibles();
+      validarLimiteByes();
+    }
+
+    // Event listeners
+    document.addEventListener('DOMContentLoaded', function() {
+      // Event listeners para selects de jugadores
+      document.querySelectorAll('.jugador-select').forEach(select => {
+        select.addEventListener('change', function() {
+          const enfrentamientoNum = this.id.split('_')[1];
+          const esJugador1 = this.id.includes('jugador1');
+          const byeCheckbox = document.getElementById(`${esJugador1 ? 'bye1' : 'bye2'}_${enfrentamientoNum}`);
+          
+          if (this.value) {
+            // Validación: No permitir el mismo jugador en el mismo enfrentamiento
+            const otroJugadorSelect = document.getElementById(`${esJugador1 ? 'jugador2' : 'jugador1'}_${enfrentamientoNum}`);
+            if (otroJugadorSelect.value === this.value) {
+              alert('¡Error! Un jugador no puede enfrentarse a sí mismo. Por favor, selecciona un jugador diferente.');
+              this.value = '';
+              return;
+            }
+            
+            // Desmarcar checkbox de BYE correspondiente
+            byeCheckbox.checked = false;
+          }
+          
+          actualizarParticipantesDisponibles();
+          validarLimiteByes();
+        });
+      });
+
+      // Event listeners para checkboxes de BYE
+      document.querySelectorAll('.bye-checkbox').forEach(checkbox => {
+        checkbox.addEventListener('change', function() {
+          const enfrentamientoNum = this.id.split('_')[1];
+          const esJugador1 = this.id.includes('bye1');
+          const jugadorSelect = document.getElementById(`${esJugador1 ? 'jugador1' : 'jugador2'}_${enfrentamientoNum}`);
+          
+          if (this.checked) {
+            // VALIDACIÓN 1: Verificar límite máximo de BYEs
+            const byesActuales = document.querySelectorAll('.bye-checkbox:checked').length;
+            if (byesActuales > BYES_NECESARIOS) {
+              alert(`¡Error! No puedes seleccionar más de ${BYES_NECESARIOS} BYEs. Ya has alcanzado el máximo permitido.`);
+              this.checked = false;
+              return;
+            }
+            
+            // Limpiar el select correspondiente
+            jugadorSelect.value = '';
+            
+            // VALIDACIÓN 2: Evitar BYE vs BYE
+            const otroByeCheckbox = document.getElementById(`${esJugador1 ? 'bye2' : 'bye1'}_${enfrentamientoNum}`);
+            const warningElement = document.getElementById(`bye_warning_${enfrentamientoNum}`);
+            
+            if (otroByeCheckbox.checked) {
+              // Mostrar alerta y desmarcar este checkbox
+              alert('¡Error! Un BYE no puede enfrentarse contra otro BYE. Por favor, asigna al menos un jugador en este enfrentamiento.');
+              this.checked = false;
+              
+              // Mostrar advertencia visual
+              if (warningElement) {
+                warningElement.style.display = 'block';
+                setTimeout(() => {
+                  warningElement.style.display = 'none';
+                }, 3000);
+              }
+              return;
+            }
+            
+            actualizarParticipantesDisponibles();
+          } else {
+            // Ocultar advertencia si existe
+            const warningElement = document.getElementById(`bye_warning_${enfrentamientoNum}`);
+            if (warningElement) {
+              warningElement.style.display = 'none';
+            }
+          }
+          
+          validarLimiteByes();
+        });
+      });
+
+      // Botones para limpiar enfrentamientos
+      document.querySelectorAll('.limpiar-enfrentamiento').forEach(btn => {
+        btn.addEventListener('click', function() {
+          const enfrentamientoNum = this.closest('.match-card').getAttribute('data-match');
+          limpiarEnfrentamiento(enfrentamientoNum);
+        });
+      });
+
+      // Validación del formulario antes de enviar
+      const form = document.getElementById('asignacionForm');
+      if (form) {
+        form.addEventListener('submit', function(e) {
+          // Eliminadas las validaciones estrictas - permitir envío directo
+          // La lógica del backend se encarga del completado automático
+          // Las validaciones básicas (no duplicar jugadores, BYE vs jugador) se mantienen en tiempo real
+        });
+      }
+
+      // Inicializar estado
+      actualizarParticipantesDisponibles();
+      validarLimiteByes();
+    });
+  </script>
+
+  <style>
+    .match-card {
+      border: 1px solid #dee2e6;
+      transition: box-shadow 0.3s;
+    }
+
+    .match-card:hover {
+      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+
+    .jugador-select:disabled option {
+      color: #999 !important;
+    }
+
+    .form-select option:disabled {
+      background-color: #f8f9fa;
+      color: #6c757d;
+    }
+
+    .bye-checkbox:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .bye-checkbox:disabled + label {
+      opacity: 0.5;
+      cursor: not-allowed;
+      color: #6c757d;
+    }
+
+    .form-check-label:hover {
+      cursor: pointer;
+    }
+
+    .form-check-label[title]:hover {
+      text-decoration: underline;
+    }
+
+    #info-byes {
+      font-size: 0.9rem;
+      margin-bottom: 0;
+    }
+
+    #info-byes i {
+      margin-right: 5px;
+    }
+
+    .alert-warning {
+      border-left: 4px solid #ffc107;
+    }
+
+    .alert-success {
+      border-left: 4px solid #28a745;
+    }
+
+    .alert-info {
+      border-left: 4px solid #17a2b8;
+    }
+  </style>
+{% endblock %}

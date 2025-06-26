@@ -150,6 +150,18 @@ class TorneoForm(forms.ModelForm):
             raise forms.ValidationError("La fecha del torneo no puede ser anterior a hoy.")
         return fecha
 
+    def clean(self):
+        cleaned_data = super().clean()
+        categoria = cleaned_data.get('categoria')
+        todo_competidor = cleaned_data.get('todo_competidor')
+
+        # Validación personalizada
+        if not categoria and not todo_competidor:
+            raise forms.ValidationError(
+                "Debes seleccionar una categoría o marcar la opción 'Todo Competidor (TC)'."
+            )
+        return cleaned_data
+
 class ClubForm(forms.ModelForm):
     class Meta:
         model = Club

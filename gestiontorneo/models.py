@@ -162,11 +162,77 @@ class ParticipanteGrupo(models.Model):
     def __str__(self):
         return f"{self.jugador.nombre} {self.jugador.apellido} - {self.grupo.nombre}"
 
+class JugadorBye(models.Model):
+    """Modelo para representar un BYE en las llaves del torneo"""
+    nombre = models.CharField(max_length=50, default='BYE')
+    posicion_bye = models.PositiveIntegerField()
+    torneo = models.ForeignKey(Torneo, on_delete=models.CASCADE, related_name='byes')
 
-# class Resultado(models.Model):
-#     partido = models.OneToOneField(Partido, on_delete=models.CASCADE)
-#     puntos_jugador1 = models.IntegerField()
-#     puntos_jugador2 = models.IntegerField()
-#
-#     def __str__(self):
-#         return f"Resultado de {self.partido}"
+    class Meta:
+        unique_together = ('torneo', 'posicion_bye')
+
+    def __str__(self):
+        return f"BYE - Posición {self.posicion_bye}"
+
+class LlaveTorneo(models.Model):
+    """Modelo para representar las llaves de eliminación directa"""
+    
+    ESTADOS_PARTIDO = [
+        ('pendiente', 'Pendiente'),
+        ('en_curso', 'En curso'),
+        ('jugado', 'Jugado'),
+    ]
+    
+    torneo = models.ForeignKey(Torneo, on_delete=models.CASCADE, related_name='llaves')
+    ronda = models.PositiveIntegerField()
+    posicion = models.PositiveIntegerField()
+    jugador1 = models.ForeignKey(Jugador, on_delete=models.CASCADE, related_name='llaves_jugador1', null=True, blank=True)
+    jugador2 = models.ForeignKey(Jugador, on_delete=models.CASCADE, related_name='llaves_jugador2', null=True, blank=True)
+    bye1 = models.ForeignKey(JugadorBye, on_delete=models.CASCADE, related_name='llaves_bye1', null=True, blank=True)
+    bye2 = models.ForeignKey(JugadorBye, on_delete=models.CASCADE, related_name='llaves_bye2', null=True, blank=True)
+    ganador = models.ForeignKey(Jugador, on_delete=models.CASCADE, related_name='llaves_ganadas', null=True, blank=True)
+    estado_partido = models.CharField(max_length=20, choices=ESTADOS_PARTIDO, default='pendiente')
+    
+    class Meta:
+        unique_together = ('torneo', 'ronda', 'posicion')
+        ordering = ['ronda', 'posicion']
+
+    def __str__(self):
+        return f"Llave {self.posicion} - Ronda {self.ronda} - {self.torneo.nombre}"
+
+    @property
+    def jugador1_nombre(self):
+        if self.jugador1:
+            return f"{self.jugador1.nombre} {self.jugador1.apellido}"
+        elif self.bye1:
+            return "BYE"
+        return "Vacío"
+
+    @property
+    def jugador2_nombre(self):
+        if self.jugador2:
+            return f"{self.jugador2.nombre} {self.jugador2.apellido}"
+        elif self.bye2:
+            return "BYE"
+        return "Vacío"
+    
+    @property
+    def estado_badge_class(self):
+        """Devuelve la clase CSS para el badge según el estado"""
+        if self.estado_partido == 'pendiente':
+            return 'bg-secondary'
+        elif self.estado_partido == 'en_curso':
+            return 'bg-warning text-dark'
+        elif self.estado_partido == 'jugado':
+            return 'bg-success'
+        return 'bg-secondary'
+    
+    @property
+    def puede_editarse(self):
+        """Indica si el partido puede ser editado por un árbitro"""
+        return self.estado_partido == 'en_curso'
+    
+    @property
+    def puede_iniciarse(self):
+        """Indica si el partido puede ser iniciado por el organizador"""
+        return self.estado_partido == 'pendiente'
