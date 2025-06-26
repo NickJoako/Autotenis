@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% load static %}
+{% block content %}
+<div class="container">
+    <h2>Enfrentamientos - Primera Ronda</h2>
+    <h4 class="text-muted mb-4">{{ torneo.nombre }}</h4>
+    
+    <!-- Mensajes de estado -->
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+    
+    <!-- Información del torneo -->
+    <div class="card mb-4">
+        <div class="card-header bg-success text-white">
+            <h5 class="mb-0"><i class="fas fa-play-circle"></i> Partidos en Curso</h5>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <p><strong>Total de enfrentamientos:</strong> {{ partidos.count }}</p>
+                    <p><strong>Modalidad:</strong> {{ torneo.get_mejor_de_sets_display }}</p>
+                </div>
+                <div class="col-md-6">
+                    <p><strong>Final:</strong> {{ torneo.get_mejor_de_sets_final_display }}</p>
+                    <p><strong>Estado:</strong> <span class="badge bg-warning text-dark">En curso</span></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Lista de enfrentamientos -->
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-lg-8 col-md-10">
+                {% for partido in partidos %}
+                <div class="mb-3">
+                    <div class="card border-primary">
+                        <div class="card-header bg-primary text-white text-center">
+                            <strong>Enfrentamiento {{ forloop.counter }}</strong>
+                            {% if partido.estado_partido == 'jugado' %}
+                                <span class="badge bg-success float-end">
+                                    <i class="fas fa-check-circle"></i> {{ partido.get_estado_partido_display }}
+                                </span>
+                            {% elif partido.es_partido_bye %}
+                                <span class="badge bg-info float-end">
+                                    <i class="fas fa-forward"></i> BYE
+                                </span>
+                            {% else %}
+                                <span class="badge bg-warning text-dark float-end">
+                                    <i class="fas fa-clock"></i> {{ partido.get_estado_partido_display }}
+                                </span>
+                            {% endif %}
+                        </div>
+                        <div class="card-body text-center">
+                            <div class="mb-2">
+                                <strong class="text-primary">{{ partido.jugador1_nombre }}</strong>
+                            </div>
+                            <div class="mb-2">
+                                <span class="badge bg-secondary">VS</span>
+                            </div>
+                            <div class="mb-3">
+                                <strong class="text-danger">{{ partido.jugador2_nombre }}</strong>
+                            </div>
+                            
+                            <!-- Mostrar resultado si el partido ya está jugado -->
+                            {% if partido.estado_partido == 'jugado' and partido.ganador %}
+                                <div class="alert alert-success mb-3">
+                                    <i class="fas fa-trophy"></i> 
+                                    <strong>Ganador: {{ partido.ganador.nombre }} {{ partido.ganador.apellido }}</strong>
+                                    {% if partido.es_partido_bye %}
+                                        <br><small class="text-muted">Victoria automática por BYE</small>
+                                    {% endif %}
+                                </div>
+                            {% endif %}
+                            
+                            <!-- Información adicional -->
+                            <div class="small text-muted">
+                                <p class="mb-1">Llave: {{ partido.llave_torneo.posicion }}</p>
+                                <p class="mb-0">Ronda: {{ partido.llave_torneo.ronda }}</p>
+                            </div>
+                            
+                            <!-- Botón para registrar resultado -->
+                            <div class="mt-3">
+                                {% if partido.estado_partido == 'jugado' %}
+                                    <span class="badge bg-success">
+                                        <i class="fas fa-check"></i> Partido Finalizado
+                                    </span>
+                                {% elif partido.es_partido_bye %}
+                                    <span class="badge bg-info">
+                                        <i class="fas fa-forward"></i> Procesado Automáticamente
+                                    </span>
+                                {% else %}
+                                    <a href="{% url 'registrar_resultado' torneo.id partido.id %}" class="btn btn-sm btn-success">
+                                        <i class="fas fa-edit"></i> Registrar Resultado
+                                    </a>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% empty %}
+                <div class="alert alert-warning text-center">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    No hay enfrentamientos disponibles. Asegúrate de haber definido las llaves del torneo.
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    
+    <!-- Botón de navegación -->
+    <div class="text-center mt-4">
+        <a href="{% url 'procesar_partidos_bye_masivo' torneo.id %}" class="btn btn-info me-2">
+            <i class="fas fa-forward"></i> Procesar Partidos BYE
+        </a>
+        <a href="{% url 'lista_torneos' %}" class="btn btn-primary">
+            <i class="fas fa-arrow-left"></i> Volver a Tus Torneos
+        </a>
+    </div>
+</div>
+{% endblock %}

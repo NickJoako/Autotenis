@@ -5,7 +5,10 @@
 
 {% if messages %}
   {% for message in messages %}
-    <div class="alert alert-success">{{ message }}</div>
+    <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+      {{ message }}
+      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
   {% endfor %}
 {% endif %}
 
@@ -18,7 +21,11 @@
             {% if torneo.modalidad == 'grupos' %}
               <a href="{% url 'organizar_grupos' torneo.id %}" class="btn btn-primary btn-sm">Definir grupos</a>
             {% elif torneo.modalidad == 'llaves' %}
-              <a href="{% url 'organizar_llaves' torneo.id %}" class="btn btn-warning btn-sm">Definir llaves</a>
+              {% if torneo.tiene_partidos %}
+                <a href="{% url 'iniciar_partidos' torneo.id %}" class="btn btn-success btn-sm">Ver Partidos</a>
+              {% else %}
+                <a href="{% url 'organizar_llaves' torneo.id %}" class="btn btn-warning btn-sm">Definir llaves</a>
+              {% endif %}
             {% else %}
               <a href="{% url 'listado_participantes' torneo.id %}" class="btn btn-info btn-sm">Ver participantes</a>
             {% endif %}
@@ -30,7 +37,11 @@
             {% if torneo.modalidad == 'grupos' %}
               <a href="{% url 'organizar_grupos' torneo.id %}" class="btn btn-primary btn-sm">Definir grupos</a>
             {% elif torneo.modalidad == 'llaves' %}
-              <a href="{% url 'organizar_llaves' torneo.id %}" class="btn btn-warning btn-sm">Definir llaves</a>
+              {% if torneo.tiene_partidos %}
+                <a href="{% url 'iniciar_partidos' torneo.id %}" class="btn btn-success btn-sm">Ver Partidos</a>
+              {% else %}
+                <a href="{% url 'organizar_llaves' torneo.id %}" class="btn btn-warning btn-sm">Definir llaves</a>
+              {% endif %}
             {% else %}
               <a href="{% url 'listado_participantes' torneo.id %}" class="btn btn-info btn-sm">Ver participantes</a>
             {% endif %}

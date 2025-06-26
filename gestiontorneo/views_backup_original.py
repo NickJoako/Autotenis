@@ -391,7 +391,7 @@ def ingresar_participantes(request, torneo_id):
                 if rut in ruts_en_archivo:
                     errores.append(f"Fila {i+2}: RUT duplicado en el archivo ({rut})")
                     continue
-
+                    
                 try:
                     jugador = Jugador.objects.get(rut=rut)
                 except Jugador.DoesNotExist:

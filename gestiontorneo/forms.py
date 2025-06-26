@@ -322,6 +322,30 @@ class JugadorForm(forms.ModelForm):
             jugador.save()
         return jugador
 
+class ConfigurarSetsForm(forms.Form):
+    """Formulario para configurar la cantidad de sets del torneo"""
+    MEJOR_DE_SETS = [
+        (1, 'Mejor de 1 set'),
+        (3, 'Mejor de 3 sets'),
+        (5, 'Mejor de 5 sets'),
+        (7, 'Mejor de 7 sets'),
+        (9, 'Mejor de 9 sets'),
+    ]
+    
+    mejor_de_sets = forms.ChoiceField(
+        choices=MEJOR_DE_SETS, 
+        initial=3, 
+        label="Mejor de sets (rondas normales)",
+        widget=forms.Select(attrs={'class': 'form-select'})
+    )
+    
+    mejor_de_sets_final = forms.ChoiceField(
+        choices=MEJOR_DE_SETS, 
+        initial=5, 
+        label="Mejor de sets (final)",
+        widget=forms.Select(attrs={'class': 'form-select'})
+    )
+
 def limpiar_texto_estricto(texto):
     if pd.isna(texto) or texto is None or texto == '':
         return ''

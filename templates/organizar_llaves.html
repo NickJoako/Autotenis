@@ -106,8 +106,9 @@
                   <i class="fas fa-redo"></i> Reconfigurar Llaves
                 </button>
               </form>
-              <a href="{% url 'gestionar_torneo' torneo.id %}" class="btn btn-success">
-                <i class="fas fa-eye"></i> Ver Torneo
+              <a href="{% url 'iniciar_partidos' torneo.id %}" class="btn btn-success"
+                 onclick="return confirm('¿Estás seguro de iniciar los partidos? Una vez iniciados, no podrás cambiar las asignaciones de llaves.');">
+                <i class="fas fa-play"></i> Iniciar Partidos
               </a>
             </div>
           </div>

@@ -72,13 +72,9 @@
 
     <!-- Botones de acción -->
     <div class="text-center">
-      <form method="post" style="display: inline;">
-        {% csrf_token %}
-        <button type="submit" name="iniciar_llaves" class="btn btn-warning btn-lg me-3 mb-2"
-          onclick="return confirm('¿Estás seguro de que quieres iniciar el torneo por llaves? Esta acción bloqueará la modalidad y no podrás cambiarla después.');">
-          <i class="fas fa-play"></i> Iniciar Torneo con Llaves
-        </button>
-      </form>
+      <a href="{% url 'configurar_sets_llaves' torneo.id %}" class="btn btn-warning btn-lg me-3 mb-2">
+        <i class="fas fa-play"></i> Iniciar Torneo con Llaves
+      </a>
       <a href="{% url 'gestionar_torneo' torneo.id %}" class="btn btn-secondary btn-lg mb-2">
         ← Volver a opciones
       </a>
