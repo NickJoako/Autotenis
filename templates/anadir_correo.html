@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+  <h2>Añadir correo a {{ jugador.nombre }} {{ jugador.apellido }}</h2>
+  <form method="post">
+    {% csrf_token %}
+    <div class="mb-3">
+      <label for="email" class="form-label">Correo electrónico</label>
+      <input type="email" class="form-control" id="email" name="email" required>
+    </div>
+    <button type="submit" class="btn btn-primary">Guardar</button>
+    <a href="{% url 'lista_jugadores' %}" class="btn btn-secondary">Cancelar</a>
+  </form>
+  {% if messages %}
+    {% for message in messages %}
+      <div class="alert alert-info mt-3">{{ message }}</div>
+    {% endfor %}
+  {% endif %}
+{% endblock %}

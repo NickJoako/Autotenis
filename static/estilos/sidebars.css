@@ -1,20 +1,33 @@
-body {
-  min-height: 100vh;
-  min-height: -webkit-fill-available;
+html, body {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  /*overflow: hidden;*/
 }
 
-html {
-  height: -webkit-fill-available;
-}
-
-main {
-  display: flex;
-  flex-wrap: nowrap;
+.main-content {
+  position: fixed;
+  left: 220px;
+  top: 0;
+  width: calc(100vw - 220px);
   height: 100vh;
-  height: -webkit-fill-available;
-  max-height: 100vh;
-  overflow-x: auto;
-  overflow-y: hidden;
+  padding: 30px 30px 0 30px;
+  overflow-y: auto;
+  background: #fff;
+}
+
+.sidebar-fixed {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 220px;
+  height: 100vh;
+  background: #23272b;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  z-index: 100;
 }
 
 .b-example-divider {

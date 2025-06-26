@@ -1,10 +1,70 @@
 {% extends "base.html" %}
 
 {% block content %}
-<h2>Crear Torneo</h2>
-<form method="post">
-  {% csrf_token %}
-  {{ form.as_p }}
-  <button type="submit" class="btn btn-primary">Crear</button>
-</form>
+<div class="container-fluid vh-100">
+  <div class="row h-100 justify-content-center align-items-center">
+    <div class="col-auto">
+      <div class="bg-white p-4 rounded shadow" style="width: 1000px; max-width: 1000px;">
+        <h2 class="mb-4 text-center">Crear Torneo</h2>
+        <form method="post">
+          {% csrf_token %}
+          <div class="mb-3">
+            {{ form.nombre.label_tag }}
+            {{ form.nombre }}
+            {{ form.nombre.errors }}
+          </div>
+          <div class="mb-3">
+            {{ form.fecha.label_tag }}
+            {{ form.fecha }}
+            {{ form.fecha.errors }}
+          </div>
+          <div class="mb-3">
+            {{ form.hora.label_tag }}
+            {{ form.hora }}
+            {{ form.hora.errors }}
+          </div>
+          <div class="mb-3">
+            {{ form.ubicacion.label_tag }}
+            {{ form.ubicacion }}
+            {{ form.ubicacion.errors }}
+          </div>
+          <div class="mb-3">
+            {{ form.federado }} {{ form.federado.label_tag }}
+            {{ form.federado.errors }}
+          </div>
+          <div class="mb-3">
+            {{ form.categoria.label_tag }}
+            {{ form.categoria }}
+            {{ form.categoria.errors }}
+          </div>
+          <div class="form-check mb-3">
+            {{ form.todo_competidor }} {{ form.todo_competidor.label_tag }}
+            {{ form.todo_competidor.errors }}
+          </div>
+          <button type="submit" class="btn btn-primary w-100">Crear</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    const tcCheckbox = document.getElementById("id_todo_competidor");
+    const categoriaSelect = document.getElementById("id_categoria");
+
+    function toggleCategoria() {
+      if (tcCheckbox.checked) {
+        categoriaSelect.disabled = true;
+        categoriaSelect.value = "";
+      } else {
+        categoriaSelect.disabled = false;
+      }
+    }
+
+    tcCheckbox.addEventListener('change', toggleCategoria);
+    toggleCategoria();
+  });
+</script>
+
 {% endblock %}

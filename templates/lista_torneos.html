@@ -2,9 +2,40 @@
 
 {% block content %}
 <h2>Mis Torneos</h2>
+
+{% if messages %}
+  {% for message in messages %}
+    <div class="alert alert-success">{{ message }}</div>
+  {% endfor %}
+{% endif %}
+
 <ul class="list-group">
   {% for torneo in torneos %}
-    <li class="list-group-item">{{ torneo.nombre }} - {{ torneo.fecha }}</li>
+    <li class="list-group-item d-flex justify-content-between align-items-center">
+      {{ torneo.nombre }} - {{ torneo.fecha }}{% if torneo.hora %} {{ torneo.hora|time:"H:i" }}{% endif %}      <span>
+        {% if torneo.federado %}
+          {% if torneo.inscripciones_cerradas %}
+            {% if torneo.modalidad == 'grupos' %}
+              <a href="{% url 'organizar_grupos' torneo.id %}" class="btn btn-primary btn-sm">Definir grupos</a>
+            {% else %}
+              <a href="{% url 'listado_participantes' torneo.id %}" class="btn btn-info btn-sm">Ver participantes</a>
+            {% endif %}
+          {% else %}
+            <a href="{% url 'gestionar_torneo_federado' torneo.id %}" class="btn btn-success btn-sm">Gestionar participantes</a>
+          {% endif %}
+        {% else %}
+          {% if torneo.inscripciones_cerradas %}
+            {% if torneo.modalidad == 'grupos' %}
+              <a href="{% url 'organizar_grupos' torneo.id %}" class="btn btn-primary btn-sm">Definir grupos</a>
+            {% else %}
+              <a href="{% url 'listado_participantes' torneo.id %}" class="btn btn-info btn-sm">Ver participantes</a>
+            {% endif %}
+          {% else %}
+            <a href="{% url 'gestionar_torneo' torneo.id %}" class="btn btn-success btn-sm">Gestionar participantes</a>
+          {% endif %}
+        {% endif %}
+      </span>
+    </li>
   {% empty %}
     <li class="list-group-item">No tienes torneos creados.</li>
   {% endfor %}

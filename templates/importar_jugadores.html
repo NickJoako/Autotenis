@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block content %}
+  <h2>Importar jugadores desde Excel</h2>
+  <p>Descarga la <a href="{% static 'plantillas/plantilla_jugadores.xlsx' %}">plantilla oficial</a> y pégale los datos antes de subir.</p>
+  <form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit" class="btn btn-success">Importar</button>
+  </form>
+  {% if mensaje %}
+    <div class="alert alert-info mt-3">{{ mensaje }}</div>
+  {% endif %}
+{% endblock %}

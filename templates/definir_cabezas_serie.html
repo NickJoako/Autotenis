@@ -1,0 +1,778 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="container">
+    <h2>Definir Cabezas de Serie - {{ torneo.nombre }}</h2>
+    
+    {% if messages %}
+      {% for message in messages %}
+        <div class="alert alert-{% if message.tags == 'error' %}danger{% else %}success{% endif %} alert-dismissible fade show" role="alert">
+          {{ message }}
+          <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+      {% endfor %}
+    {% endif %}
+    
+    <hr>
+    
+    <!-- Información del torneo -->
+    <div class="row mb-4">
+      <div class="col-md-12">
+        <div class="card border-info">
+          <div class="card-header bg-info text-white">
+            <h5 class="mb-0"><i class="fas fa-crown"></i> Información de Cabezas de Serie</h5>
+          </div>
+          <div class="card-body">
+            <div class="row">
+              <div class="col-md-6">
+                <p><strong>Participantes:</strong> {{ num_participantes }} jugadores</p>
+                <p><strong>Total de grupos:</strong> {{ total_grupos }}</p>
+              </div>
+              <div class="col-md-6">
+                <p><strong>Cabezas de serie requeridas:</strong> {{ total_grupos }} (máximo, una por grupo)</p>
+                <p><strong>Cabezas de segunda línea:</strong> {{ total_grupos }} (opcional, respeta serpenteo)</p>
+                <p class="text-muted"><strong>Nota:</strong> No es obligatorio llenar todas las cabezas de serie. Puedes seleccionar solo las que conoces y el resto se asignará automáticamente.</p>
+                <p class="text-info"><strong>Orden secuencial:</strong> Primera línea: grupos 1, 2, 3... | Segunda línea: grupos {{ total_grupos }}, {{ total_grupos|add:-1 }}, {{ total_grupos|add:-2 }}... (serpenteo)</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Formulario para seleccionar cabezas de serie -->
+    <form method="post">
+      {% csrf_token %}
+      <div class="card">
+        <div class="card-header bg-warning">
+          <h5 class="mb-0"><i class="fas fa-users"></i> Seleccionar Cabezas de Serie</h5>
+        </div>
+        <div class="card-body">
+          <div class="row">
+            {% for i in "x"|ljust:total_grupos %}
+              <div class="col-md-6 col-lg-4 mb-3">
+                <div class="card border-secondary cabeza-serie-card" data-grupo="{{ forloop.counter0 }}">
+                  <div class="card-header bg-secondary text-white text-center">
+                    <h6 class="mb-0">Cabeza de Serie {{ forloop.counter }}</h6>
+                    <small>Grupo {{ forloop.counter }}</small>
+                  </div>
+                  <div class="card-body">
+                    <!-- Campo de búsqueda -->
+                    <div class="mb-2 search-container">
+                      <input type="text" 
+                             class="form-control form-control-sm search-input" 
+                             placeholder="Buscar jugador..." 
+                             data-grupo="{{ forloop.counter0 }}"
+                             autocomplete="off">
+                      <div class="search-results" data-grupo="{{ forloop.counter0 }}" style="display: none;"></div>
+                    </div>
+                    
+                    <!-- Campo oculto para el valor seleccionado -->
+                    <input type="hidden" 
+                           name="cabeza_{{ forloop.counter0 }}" 
+                           class="cabeza-select" 
+                           data-grupo="{{ forloop.counter0 }}"
+                           value="">
+                    
+                    <!-- Mostrar jugador seleccionado -->
+                    <div class="selected-player" data-grupo="{{ forloop.counter0 }}" style="display: none;">
+                      <div class="alert alert-success d-flex justify-content-between align-items-center mb-0">
+                        <span class="selected-text"></span>
+                        <button type="button" class="btn btn-sm btn-outline-danger clear-selection" data-grupo="{{ forloop.counter0 }}">
+                          <i class="fas fa-times"></i>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+          
+          <div class="text-center mt-4">
+            <button type="submit" name="asignar_con_cabezas" class="btn btn-success btn-lg me-3">
+              <i class="fas fa-check"></i> Asignar Grupos con Cabezas de Serie
+            </button>
+            <a href="{% url 'organizar_grupos' torneo.id %}" class="btn btn-secondary btn-lg">
+              <i class="fas fa-arrow-left"></i> Volver a Organizar Grupos
+            </a>
+            
+            <div class="mt-3">
+              <small class="text-muted">
+                <i class="fas fa-info-circle"></i> 
+                Solo es necesario seleccionar las cabezas de serie que conoces. Los grupos restantes se llenarán automáticamente.
+              </small>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sección de Cabezas de Serie de Segunda Línea -->
+      <div class="card mt-4" id="segunda-linea-container" style="display: none;">
+        <div class="card-header bg-info">
+          <h5 class="mb-0"><i class="fas fa-users"></i> Cabezas de Serie - Segunda Línea</h5>
+          <small class="text-light">Asignación en orden serpenteo: desde el último grupo hacia atrás</small>
+        </div>
+        <div class="card-body">
+          <div class="row" id="segunda-linea-cards">
+            {% for i in "x"|ljust:total_grupos %}
+              <div class="col-md-6 col-lg-4 mb-3">
+                <div class="card border-info segunda-linea-card" data-grupo="{{ forloop.counter0 }}">
+                  <div class="card-header bg-info text-white text-center">
+                    <h6 class="mb-0">Segunda Línea {{ forloop.counter }}</h6>
+                    <small>Grupo <span class="grupo-number"></span></small>
+                  </div>
+                  <div class="card-body">
+                    <!-- Campo de búsqueda -->
+                    <div class="mb-2 search-container">
+                      <input type="text" 
+                             class="form-control form-control-sm search-input-segunda" 
+                             placeholder="Buscar jugador..." 
+                             data-grupo="{{ forloop.counter0 }}"
+                             autocomplete="off">
+                      <div class="search-results-segunda" data-grupo="{{ forloop.counter0 }}" style="display: none;"></div>
+                    </div>
+                    
+                    <!-- Campo oculto para el valor seleccionado -->
+                    <input type="hidden" 
+                           name="segunda_{{ forloop.counter0 }}" 
+                           class="segunda-select" 
+                           data-grupo="{{ forloop.counter0 }}"
+                           value="">
+                    
+                    <!-- Mostrar jugador seleccionado -->
+                    <div class="selected-player-segunda" data-grupo="{{ forloop.counter0 }}" style="display: none;">
+                      <div class="alert alert-info d-flex justify-content-between align-items-center mb-0">
+                        <span class="selected-text"></span>
+                        <button type="button" class="btn btn-sm btn-outline-danger clear-selection-segunda" data-grupo="{{ forloop.counter0 }}">
+                          <i class="fas fa-times"></i>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    </form>
+
+    <!-- Lista de participantes para referencia -->
+    <div class="card mt-4">
+      <div class="card-header bg-light">
+        <h5 class="mb-0"><i class="fas fa-list"></i> Participantes Disponibles</h5>
+        <small class="text-muted">Los jugadores seleccionados como cabezas de serie aparecerán deshabilitados</small>
+      </div>
+      <div class="card-body">
+        <div class="row" id="lista-participantes">
+          {% for participacion in participantes %}
+            <div class="col-md-6 col-lg-4 mb-2 participante-item" data-jugador-id="{{ participacion.jugador.id }}">
+              <div class="card border-light participante-card">
+                <div class="card-body p-2">
+                  <div class="d-flex justify-content-between">
+                    <span>{{ participacion.jugador.nombre }} {{ participacion.jugador.apellido }}</span>
+                    <small class="text-muted">{{ participacion.jugador.calcular_categoria }}</small>
+                  </div>
+                  <div class="selected-badge" style="display: none;">
+                    <small class="badge bg-warning text-dark">Seleccionado como cabeza de serie</small>
+                  </div>
+                </div>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Botones de navegación -->
+    <div class="text-center mt-4">
+      <a href="{% url 'lista_torneos' %}" class="btn btn-secondary">
+        <i class="fas fa-arrow-left"></i> Volver a Mis Torneos
+      </a>
+    </div>
+  </div>
+
+  <style>
+    .cabeza-serie-card.disabled {
+      opacity: 0.5;
+      pointer-events: none;
+    }
+    
+    .cabeza-serie-card.disabled .card-header {
+      background-color: #6c757d !important;
+    }
+    
+    .cabeza-serie-card.active .card-header {
+      background-color: #198754 !important;
+    }
+    
+    .cabeza-serie-card.next-available .card-header {
+      background-color: #fd7e14 !important;
+    }
+
+    /* Estilos para segunda línea */
+    .segunda-linea-card.disabled {
+      opacity: 0.5;
+      pointer-events: none;
+    }
+    
+    .segunda-linea-card.disabled .card-header {
+      background-color: #6c757d !important;
+    }
+    
+    .segunda-linea-card.active .card-header {
+      background-color: #198754 !important;
+    }
+    
+    .segunda-linea-card.next-available .card-header {
+      background-color: #fd7e14 !important;
+    }
+
+    #segunda-linea-container {
+      animation: slideDown 0.5s ease-out;
+    }
+
+    @keyframes slideDown {
+      from {
+        opacity: 0;
+        transform: translateY(-20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    /* Estilos para el sistema de búsqueda */
+    .search-results, .search-results-segunda {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background: white;
+      border: 1px solid #dee2e6;
+      border-top: none;
+      border-radius: 0 0 0.375rem 0.375rem;
+      max-height: 200px;
+      overflow-y: auto;
+      z-index: 1000;
+      box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+    }
+
+    .search-result-item {
+      padding: 0.5rem;
+      cursor: pointer;
+      border-bottom: 1px solid #f8f9fa;
+      transition: background-color 0.15s ease-in-out;
+    }
+
+    .search-result-item:hover {
+      background-color: #f8f9fa;
+    }
+
+    .search-result-item:last-child {
+      border-bottom: none;
+    }
+
+    .search-result-item.disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      background-color: #f8f9fa;
+    }
+
+    .search-input {
+      position: relative;
+    }
+
+    .search-container {
+      position: relative;
+    }
+
+    .no-results {
+      padding: 0.5rem;
+      text-align: center;
+      color: #6c757d;
+      font-style: italic;
+    }
+
+    .selected-player {
+      animation: fadeIn 0.3s ease-in-out;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .clear-selection {
+      font-size: 0.75rem;
+      padding: 0.25rem 0.5rem;
+    }
+
+    /* Estilos para la lista de participantes */
+    .participante-item.selected .participante-card {
+      opacity: 0.6;
+      background-color: #fff3cd;
+      border-color: #ffc107 !important;
+    }
+
+    .participante-item.selected .card-body {
+      position: relative;
+    }
+
+    .selected-badge {
+      margin-top: 0.25rem;
+    }
+
+    .participante-item {
+      transition: all 0.3s ease;
+    }
+  </style>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      // Datos de participantes (generados desde Django)
+      const participantes = [
+        {% for participacion in participantes %}
+        {
+          id: {{ participacion.jugador.id }},
+          nombre: "{{ participacion.jugador.nombre|escapejs }}",
+          apellido: "{{ participacion.jugador.apellido|escapejs }}",
+          categoria: "{{ participacion.jugador.calcular_categoria|escapejs }}",
+          nombreCompleto: "{{ participacion.jugador.nombre|escapejs }} {{ participacion.jugador.apellido|escapejs }}"
+        }{% if not forloop.last %},{% endif %}
+        {% endfor %}
+      ];
+
+      const selects = document.querySelectorAll('.cabeza-select');
+      const cards = document.querySelectorAll('.cabeza-serie-card');
+      const searchInputs = document.querySelectorAll('.search-input');
+      const searchResults = document.querySelectorAll('.search-results');
+      const selectedPlayers = document.querySelectorAll('.selected-player');
+      const clearButtons = document.querySelectorAll('.clear-selection');
+
+      // Variables para segunda línea
+      const segundaSelects = document.querySelectorAll('.segunda-select');
+      const segundaCards = document.querySelectorAll('.segunda-linea-card');
+      const segundaSearchInputs = document.querySelectorAll('.search-input-segunda');
+      const segundaSearchResults = document.querySelectorAll('.search-results-segunda');
+      const segundaSelectedPlayers = document.querySelectorAll('.selected-player-segunda');
+      const segundaClearButtons = document.querySelectorAll('.clear-selection-segunda');
+      const segundaLineaContainer = document.getElementById('segunda-linea-container');
+      const totalGrupos = {{ total_grupos }};
+
+      // Función para filtrar participantes
+      function filterParticipantes(query, excludeIds = []) {
+        if (!query.trim()) return [];
+        
+        const lowerQuery = query.toLowerCase();
+        return participantes.filter(p => {
+          const matchesQuery = p.nombreCompleto.toLowerCase().includes(lowerQuery) ||
+                              p.categoria.toLowerCase().includes(lowerQuery);
+          const isNotExcluded = !excludeIds.includes(p.id.toString());
+          return matchesQuery && isNotExcluded;
+        });
+      }
+
+      // Función para obtener IDs de jugadores ya seleccionados
+      function getUsedPlayerIds() {
+        const primeraLinea = Array.from(selects)
+          .map(select => select.value)
+          .filter(value => value !== '');
+        const segundaLinea = Array.from(segundaSelects)
+          .map(select => select.value)
+          .filter(value => value !== '');
+        return [...primeraLinea, ...segundaLinea];
+      }
+
+      // Función para mostrar resultados de búsqueda
+      function showSearchResults(grupo, results, query) {
+        const resultsContainer = document.querySelector(`[data-grupo="${grupo}"].search-results`);
+        const usedIds = getUsedPlayerIds();
+        
+        resultsContainer.innerHTML = '';
+        
+        if (results.length === 0) {
+          resultsContainer.innerHTML = '<div class="no-results">No se encontraron jugadores</div>';
+        } else {
+          results.slice(0, 10).forEach(participante => { // Limitar a 10 resultados
+            const isUsed = usedIds.includes(participante.id.toString());
+            const item = document.createElement('div');
+            item.className = `search-result-item ${isUsed ? 'disabled' : ''}`;
+            item.innerHTML = `
+              <div class="d-flex justify-content-between">
+                <span><strong>${participante.nombreCompleto}</strong></span>
+                <small class="text-muted">${participante.categoria}</small>
+              </div>
+              ${isUsed ? '<small class="text-danger">Ya seleccionado</small>' : ''}
+            `;
+            
+            if (!isUsed) {
+              item.addEventListener('click', () => selectPlayer(grupo, participante));
+            }
+            
+            resultsContainer.appendChild(item);
+          });
+        }
+        
+        resultsContainer.style.display = 'block';
+      }
+
+      // Función para ocultar resultados
+      function hideSearchResults(grupo) {
+        const resultsContainer = document.querySelector(`[data-grupo="${grupo}"].search-results`);
+        resultsContainer.style.display = 'none';
+      }
+
+      // Función para seleccionar un jugador
+      function selectPlayer(grupo, participante) {
+        const hiddenInput = document.querySelector(`[data-grupo="${grupo}"].cabeza-select`);
+        const searchInput = document.querySelector(`[data-grupo="${grupo}"].search-input`);
+        const selectedPlayerDiv = document.querySelector(`[data-grupo="${grupo}"].selected-player`);
+        
+        // Establecer valores
+        hiddenInput.value = participante.id;
+        searchInput.value = '';
+        
+        // Mostrar jugador seleccionado
+        selectedPlayerDiv.querySelector('.selected-text').textContent = 
+          `${participante.nombreCompleto} (${participante.categoria})`;
+        selectedPlayerDiv.style.display = 'block';
+        searchInput.style.display = 'none';
+        
+        // Ocultar resultados
+        hideSearchResults(grupo);
+        
+        // Actualizar estados
+        updateSelectStates();
+      }
+
+      // Función para limpiar selección
+      function clearSelection(grupo) {
+        const hiddenInput = document.querySelector(`[data-grupo="${grupo}"].cabeza-select`);
+        const searchInput = document.querySelector(`[data-grupo="${grupo}"].search-input`);
+        const selectedPlayerDiv = document.querySelector(`[data-grupo="${grupo}"].selected-player`);
+        
+        hiddenInput.value = '';
+        searchInput.value = '';
+        searchInput.style.display = 'block';
+        selectedPlayerDiv.style.display = 'none';
+        
+        updateSelectStates();
+      }
+
+      // Función para actualizar la lista de participantes
+      function updateParticipantesList() {
+        const usedIds = getUsedPlayerIds();
+        const participanteItems = document.querySelectorAll('.participante-item');
+        
+        participanteItems.forEach(item => {
+          const jugadorId = item.dataset.jugadorId;
+          const selectedBadge = item.querySelector('.selected-badge');
+          
+          if (usedIds.includes(jugadorId)) {
+            // Jugador seleccionado como cabeza de serie
+            item.classList.add('selected');
+            selectedBadge.style.display = 'block';
+          } else {
+            // Jugador disponible
+            item.classList.remove('selected');
+            selectedBadge.style.display = 'none';
+          }
+        });
+      }
+
+      // Función para actualizar estados de las cards
+      function updateSelectStates() {
+        let lastFilledIndex = -1;
+        
+        // Encontrar el último grupo llenado consecutivamente
+        for (let i = 0; i < selects.length; i++) {
+          if (selects[i].value !== '') {
+            lastFilledIndex = i;
+          } else {
+            break;
+          }
+        }
+        
+        // Actualizar estados de las cards
+        cards.forEach((card, index) => {
+          const searchInput = card.querySelector('.search-input');
+          const selectedPlayerDiv = card.querySelector('.selected-player');
+          
+          card.classList.remove('disabled', 'active', 'next-available');
+          
+          if (index <= lastFilledIndex) {
+            // Grupos ya llenados
+            card.classList.add('active');
+            searchInput.disabled = false;
+          } else if (index === lastFilledIndex + 1) {
+            // Siguiente grupo disponible
+            card.classList.add('next-available');
+            searchInput.disabled = false;
+          } else {
+            // Grupos bloqueados
+            card.classList.add('disabled');
+            searchInput.disabled = true;
+            // Limpiar si tiene valor
+            if (selects[index].value !== '') {
+              clearSelection(index);
+            }
+          }
+        });
+        
+        // Actualizar lista de participantes
+        updateParticipantesList();
+        
+        // Mostrar/ocultar segunda línea si todas las cabezas de primera línea están llenas
+        checkSecondLineVisibility();
+      }
+
+      // Función para verificar si mostrar la segunda línea
+      function checkSecondLineVisibility() {
+        const filledFirst = Array.from(selects).every(select => select.value !== '');
+        if (filledFirst && totalGrupos > 0) {
+          segundaLineaContainer.style.display = 'block';
+          setupSecondLineOrder();
+        } else {
+          segundaLineaContainer.style.display = 'none';
+          // Limpiar selecciones de segunda línea si se oculta
+          segundaSelects.forEach((select, index) => {
+            if (select.value !== '') {
+              clearSecondLineSelection(index);
+            }
+          });
+        }
+      }
+
+      // Función para configurar el orden serpenteo de segunda línea
+      function setupSecondLineOrder() {
+        segundaCards.forEach((card, index) => {
+          // Calcular el grupo en orden serpenteo (desde el último hacia atrás)
+          const grupoNumber = totalGrupos - index;
+          const grupoDisplay = card.querySelector('.grupo-number');
+          if (grupoDisplay) {
+            grupoDisplay.textContent = grupoNumber;
+          }
+        });
+        updateSecondLineStates();
+      }
+
+      // Funciones para segunda línea (similares a primera línea)
+      function showSecondLineSearchResults(grupo, results, query) {
+        const resultsContainer = document.querySelector(`[data-grupo="${grupo}"].search-results-segunda`);
+        const usedIds = getUsedPlayerIds();
+        
+        resultsContainer.innerHTML = '';
+        
+        if (results.length === 0) {
+          resultsContainer.innerHTML = '<div class="no-results">No se encontraron jugadores</div>';
+        } else {
+          results.slice(0, 10).forEach(participante => {
+            const isUsed = usedIds.includes(participante.id.toString());
+            const item = document.createElement('div');
+            item.className = `search-result-item ${isUsed ? 'disabled' : ''}`;
+            item.innerHTML = `
+              <div class="d-flex justify-content-between">
+                <span><strong>${participante.nombreCompleto}</strong></span>
+                <small class="text-muted">${participante.categoria}</small>
+              </div>
+              ${isUsed ? '<small class="text-danger">Ya seleccionado</small>' : ''}
+            `;
+            
+            if (!isUsed) {
+              item.addEventListener('click', () => selectSecondLinePlayer(grupo, participante));
+            }
+            
+            resultsContainer.appendChild(item);
+          });
+        }
+        
+        resultsContainer.style.display = 'block';
+      }
+
+      function hideSecondLineSearchResults(grupo) {
+        const resultsContainer = document.querySelector(`[data-grupo="${grupo}"].search-results-segunda`);
+        resultsContainer.style.display = 'none';
+      }
+
+      function selectSecondLinePlayer(grupo, participante) {
+        const hiddenInput = document.querySelector(`[data-grupo="${grupo}"].segunda-select`);
+        const searchInput = document.querySelector(`[data-grupo="${grupo}"].search-input-segunda`);
+        const selectedPlayerDiv = document.querySelector(`[data-grupo="${grupo}"].selected-player-segunda`);
+        
+        hiddenInput.value = participante.id;
+        searchInput.value = '';
+        
+        selectedPlayerDiv.querySelector('.selected-text').textContent = 
+          `${participante.nombreCompleto} (${participante.categoria})`;
+        selectedPlayerDiv.style.display = 'block';
+        searchInput.style.display = 'none';
+        
+        hideSecondLineSearchResults(grupo);
+        updateSecondLineStates();
+        updateParticipantesList();
+      }
+
+      function clearSecondLineSelection(grupo) {
+        const hiddenInput = document.querySelector(`[data-grupo="${grupo}"].segunda-select`);
+        const searchInput = document.querySelector(`[data-grupo="${grupo}"].search-input-segunda`);
+        const selectedPlayerDiv = document.querySelector(`[data-grupo="${grupo}"].selected-player-segunda`);
+        
+        hiddenInput.value = '';
+        searchInput.value = '';
+        searchInput.style.display = 'block';
+        selectedPlayerDiv.style.display = 'none';
+        
+        updateSecondLineStates();
+        updateParticipantesList();
+      }
+
+      function updateSecondLineStates() {
+        let lastFilledIndex = -1;
+        
+        // Encontrar el último grupo llenado consecutivamente en segunda línea
+        for (let i = 0; i < segundaSelects.length; i++) {
+          if (segundaSelects[i].value !== '') {
+            lastFilledIndex = i;
+          } else {
+            break;
+          }
+        }
+        
+        // Actualizar estados de las cards de segunda línea
+        segundaCards.forEach((card, index) => {
+          const searchInput = card.querySelector('.search-input-segunda');
+          
+          card.classList.remove('disabled', 'active', 'next-available');
+          
+          if (index <= lastFilledIndex) {
+            card.classList.add('active');
+            searchInput.disabled = false;
+          } else if (index === lastFilledIndex + 1) {
+            card.classList.add('next-available');
+            searchInput.disabled = false;
+          } else {
+            card.classList.add('disabled');
+            searchInput.disabled = true;
+            if (segundaSelects[index].value !== '') {
+              clearSecondLineSelection(index);
+            }
+          }
+        });
+      }
+
+      // Event listeners para búsqueda
+      searchInputs.forEach((input, index) => {
+        input.addEventListener('input', function() {
+          const query = this.value;
+          const grupo = parseInt(this.dataset.grupo);
+          
+          if (query.length >= 2) {
+            const usedIds = getUsedPlayerIds();
+            const results = filterParticipantes(query, usedIds);
+            showSearchResults(grupo, results, query);
+          } else {
+            hideSearchResults(grupo);
+          }
+        });
+
+        input.addEventListener('focus', function() {
+          const query = this.value;
+          const grupo = parseInt(this.dataset.grupo);
+          
+          if (query.length >= 2) {
+            const usedIds = getUsedPlayerIds();
+            const results = filterParticipantes(query, usedIds);
+            showSearchResults(grupo, results, query);
+          }
+        });
+
+        input.addEventListener('blur', function() {
+          // Delay para permitir clicks en resultados
+          setTimeout(() => {
+            hideSearchResults(parseInt(this.dataset.grupo));
+          }, 200);
+        });
+      });
+
+      // Event listeners para botones de limpiar
+      clearButtons.forEach(button => {
+        button.addEventListener('click', function() {
+          const grupo = parseInt(this.dataset.grupo);
+          clearSelection(grupo);
+        });
+      });
+
+      // Event listeners para cambios en selects ocultos
+      selects.forEach((select, index) => {
+        select.addEventListener('change', function() {
+          updateSelectStates();
+        });
+      });
+
+      // Event listeners para segunda línea
+      segundaSearchInputs.forEach((input, index) => {
+        input.addEventListener('input', function() {
+          const query = this.value;
+          const grupo = parseInt(this.dataset.grupo);
+          
+          if (query.length >= 2) {
+            const usedIds = getUsedPlayerIds();
+            const results = filterParticipantes(query, usedIds);
+            showSecondLineSearchResults(grupo, results, query);
+          } else {
+            hideSecondLineSearchResults(grupo);
+          }
+        });
+
+        input.addEventListener('focus', function() {
+          const query = this.value;
+          const grupo = parseInt(this.dataset.grupo);
+          
+          if (query.length >= 2) {
+            const usedIds = getUsedPlayerIds();
+            const results = filterParticipantes(query, usedIds);
+            showSecondLineSearchResults(grupo, results, query);
+          }
+        });
+
+        input.addEventListener('blur', function() {
+          setTimeout(() => {
+            hideSecondLineSearchResults(parseInt(this.dataset.grupo));
+          }, 200);
+        });
+      });
+
+      segundaClearButtons.forEach(button => {
+        button.addEventListener('click', function() {
+          const grupo = parseInt(this.dataset.grupo);
+          clearSecondLineSelection(grupo);
+        });
+      });
+
+      segundaSelects.forEach((select, index) => {
+        select.addEventListener('change', function() {
+          updateSecondLineStates();
+        });
+      });
+
+      // Estado inicial
+      updateSelectStates();
+      updateParticipantesList();
+
+      // Cerrar resultados al hacer click fuera
+      document.addEventListener('click', function(e) {
+        if (!e.target.closest('.search-input') && !e.target.closest('.search-results') &&
+            !e.target.closest('.search-input-segunda') && !e.target.closest('.search-results-segunda')) {
+          searchResults.forEach((result, index) => {
+            hideSearchResults(index);
+          });
+          segundaSearchResults.forEach((result, index) => {
+            hideSecondLineSearchResults(index);
+          });
+        }
+      });
+    });
+  </script>
+{% endblock %}

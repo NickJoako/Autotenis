@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block content %}
+  <h2>Gestionar Torneo: {{ torneo.nombre }}</h2>
+  <div class="mb-3">
+    <a href="{% url 'lista_torneos' %}" class="btn btn-secondary">
+      ← Volver a mis torneos
+    </a>
+  </div>
+  <div class="alert alert-info mt-4">
+    Torneo federado en proceso...
+  </div>
+{% endblock %}

@@ -1,0 +1,224 @@
+{% extends "base.html" %}
+{% load static %}
+{% block content %}  <h2>Agregar Participantes a Torneo</h2>
+  <hr>
+  <h3>{{ torneo.nombre }}{% if torneo.categoria %} categoría {{ torneo.categoria.nombre }}{% elif torneo.todo_competidor %} (Todo Competidor){% endif %}</h3> 
+
+  <!-- Mostrar mensajes de error y éxito -->
+  {% if messages %}
+    {% for message in messages %}
+      <div class="alert {% if message.tags == 'error' %}alert-danger{% elif message.tags == 'success' %}alert-success{% else %}alert-info{% endif %} alert-dismissible fade show" role="alert">
+        {{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  <form method="get" class="mb-3" id="search-form">
+    <div class="input-group" style="max-width: 800px;">
+      <input type="text" name="q" class="form-control" placeholder="Buscar por RUT, nombre, apellido, club, correo, etc." value="{{ query|default:'' }}">
+      <button type="submit" class="btn btn-primary">Buscar</button>
+    </div>    <!-- Campos ocultos para mantener las selecciones durante la búsqueda -->
+    {% for rut in seleccionados_ids %}
+      <input type="hidden" name="selected" value="{{ rut }}">
+    {% endfor %}
+  </form>
+
+  <!-- Sección de importación por Excel -->
+  <div class="card mb-4">
+    <div class="card-header">
+      <h5 class="mb-0">Importar participantes desde Excel</h5>
+    </div>
+    <div class="card-body">
+      <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        <div class="row align-items-end">
+          <div class="col-md-6">
+            <label for="archivo_participantes" class="form-label">Archivo Excel con RUTs (.xlsx)</label>
+            <input type="file" name="archivo_participantes" class="form-control" accept=".xlsx,.xls" required>
+            <small class="form-text text-muted">
+              El archivo debe contener una columna llamada 'RUT' con los RUTs de los jugadores a agregar.
+            </small>
+          </div>
+          <div class="col-md-3">
+            <button type="submit" name="importar_participantes" class="btn btn-success">
+              <i class="fas fa-upload"></i> Importar
+            </button>
+          </div>          <div class="col-md-3">
+            <a href="{% static 'plantillas/plantilla_participantes.xlsx' %}" class="btn btn-outline-info">
+              <i class="fas fa-download"></i> Descargar plantilla
+            </a>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <form method="post">
+    {% csrf_token %}
+    <div class="mb-3">
+      <table class="table table-striped">
+        <thead>
+          <tr>
+            <th></th>
+            <th>Nombre</th>
+            <th>Apellido</th>
+            <th>Fecha de nacimiento</th>
+            <th>Género</th>
+            <th>Categoría</th>
+            <th>Club</th>
+            <th>Correo</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for jugador in jugadores %}
+            <tr>
+              <td>                <input type="checkbox" name="jugadores" value="{{ jugador.rut }}"
+                  {% if jugador.rut in seleccionados_ids %}checked{% endif %}>
+              </td>
+              <td>{{ jugador.nombre }}</td>
+              <td>{{ jugador.apellido }}</td>
+              <td>{{ jugador.fecha_nacimiento }}</td>
+              <td>{{ jugador.genero }}</td>
+              <td>{{ jugador.calcular_categoria }}</td>
+              <td>{{ jugador.club|default:"Sin club" }}</td>
+              <td>{{ jugador.email|default:"Sin correo" }}</td>
+            </tr>
+          {% empty %}
+            <tr>
+              <td colspan="9" class="text-center">No hay jugadores disponibles para esta categoría.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <small class="form-text text-muted">Selecciona los jugadores que participarán en el torneo.</small>
+    </div>
+    <button type="submit" name="agregar" class="btn btn-success">Agregar participantes</button>
+    <a href="{% url 'gestionar_torneo' torneo.id %}" class="btn btn-secondary">Volver</a>
+  </form>
+  {% if jugadores_seleccionados %}
+  <hr>  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="mb-0">Participantes seleccionados (sin confirmar): <span id="contador-participantes">({{ jugadores_seleccionados|length }})</span></h4>
+    <div class="col-md-4">      <div class="input-group">
+        <span class="input-group-text"><i class="fas fa-search"></i></span>
+        <input type="text" id="buscar-participantes" class="form-control" placeholder="Buscar por RUT, nombre, apellido, club..." onkeyup="filtrarParticipantes()">
+        <button class="btn btn-outline-secondary" type="button" onclick="limpiarBusqueda()" title="Limpiar búsqueda">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+  <table class="table table-bordered" id="tabla-participantes">
+    <thead>
+      <tr>
+        <th>Nombre</th>
+        <th>Apellido</th>
+        <th>Fecha de nacimiento</th>
+        <th>Género</th>
+        <th>Categoría</th>
+        <th>Club</th>
+        <th>Correo</th>
+        <th>Quitar</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for jugador in jugadores_seleccionados %}
+        <tr data-rut="{{ jugador.rut }}">
+          <td>{{ jugador.nombre }}</td>
+          <td>{{ jugador.apellido }}</td>
+          <td>{{ jugador.fecha_nacimiento }}</td>
+          <td>{{ jugador.genero }}</td>
+          <td>{{ jugador.calcular_categoria }}</td>
+          <td>{{ jugador.club|default:"Sin club" }}</td>
+          <td>{{ jugador.email|default:"Sin correo" }}</td>
+          <td>
+            <form method="post" style="display:inline;">
+              {% csrf_token %}
+              <button type="submit" name="quitar" value="{{ jugador.rut }}" class="btn btn-danger btn-sm">Quitar</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div id="sin-resultados" class="alert alert-info text-center" style="display: none;">
+    <i class="fas fa-search"></i> No se encontraron participantes que coincidan con la búsqueda por RUT, nombre, apellido, club o correo.
+  </div>
+  
+  <form method="post">
+    {% csrf_token %}
+    <button type="submit" name="confirmar" class="btn btn-primary">Confirmar participantes</button>
+  </form>
+{% endif %}
+<script>
+  function filtrarParticipantes() {
+    const filtro = document.getElementById('buscar-participantes').value.toLowerCase();
+    const tabla = document.getElementById('tabla-participantes');
+    const filas = tabla.getElementsByTagName('tbody')[0].getElementsByTagName('tr');
+    const sinResultados = document.getElementById('sin-resultados');
+    let participantesVisibles = 0;
+    
+    for (let i = 0; i < filas.length; i++) {
+      const fila = filas[i];
+      const rut = fila.getAttribute('data-rut').toLowerCase(); // Obtener RUT del atributo data-rut
+      const nombre = fila.cells[0].textContent.toLowerCase(); // Ajustar índices
+      const apellido = fila.cells[1].textContent.toLowerCase();
+      const club = fila.cells[5].textContent.toLowerCase();
+      const correo = fila.cells[6].textContent.toLowerCase();
+      
+      if (rut.includes(filtro) || nombre.includes(filtro) || apellido.includes(filtro) || club.includes(filtro) || correo.includes(filtro)) {
+        fila.style.display = '';
+        participantesVisibles++;
+      } else {
+        fila.style.display = 'none';
+      }
+    }
+    
+    const contador = document.getElementById('contador-participantes');
+    if (filtro === '') {
+      contador.textContent = `(${filas.length})`;
+    } else {
+      contador.textContent = `(${participantesVisibles} de ${filas.length})`;
+    }
+    
+    if (participantesVisibles === 0 && filtro !== '') {
+      sinResultados.style.display = 'block';
+      tabla.style.display = 'none';
+    } else {
+      sinResultados.style.display = 'none';
+      tabla.style.display = 'table';
+    }
+  }
+
+  function limpiarBusqueda() {
+    document.getElementById('buscar-participantes').value = '';
+    filtrarParticipantes();
+  }
+
+  function updateSearchHiddenFields() {
+    const searchForm = document.getElementById('search-form');
+    const checkboxes = document.querySelectorAll('input[name="jugadores"]:checked');
+    
+    const existingHidden = searchForm.querySelectorAll('input[name="selected"]');
+    existingHidden.forEach(input => input.remove());
+    
+    checkboxes.forEach(checkbox => {
+      const hiddenInput = document.createElement('input');
+      hiddenInput.type = 'hidden';
+      hiddenInput.name = 'selected';
+      hiddenInput.value = checkbox.value;
+      searchForm.appendChild(hiddenInput);
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    const checkboxes = document.querySelectorAll('input[name="jugadores"]');
+    checkboxes.forEach(checkbox => {
+      checkbox.addEventListener('change', updateSearchHiddenFields);
+    });
+  });
+  if (performance && performance.navigation.type === performance.navigation.TYPE_BACK_FORWARD) {
+    window.location.reload();
+  }
+</script>
+{% endblock %}

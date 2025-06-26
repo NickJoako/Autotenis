@@ -3,16 +3,29 @@ from gestiontorneo.models import *
 from django.contrib.auth.forms import UserCreationForm
 from django.core.exceptions import ValidationError
 import re
+import unicodedata
+import pandas as pd
 from django.utils import timezone
 from datetime import date
 
+class ImportarJugadoresForm(forms.Form):
+    archivo = forms.FileField(label="Archivo Excel (.xlsx)")
+
+class ImportarParticipantesForm(forms.Form):
+    archivo_participantes = forms.FileField(
+        label="Archivo Excel con RUTs (.xlsx)",
+        help_text="Sube un archivo Excel con una columna 'RUT' que contenga los RUTs de los jugadores a agregar al torneo."
+    )
 
 class RegistroPersonalizadoForm(UserCreationForm):
 
     email = forms.EmailField(
-        label='Correo Electrónico',
-        widget=forms.EmailInput(attrs={'placeholder': 'Ingrese su correo electrónico'}),
-        required=True
+        label="Correo electrónico", 
+        required=False, 
+        widget=forms.EmailInput(attrs={
+            "placeholder": "Opcional",
+            "class": "form-control"
+        }),
     )
 
     password1 = forms.CharField(
@@ -69,19 +82,55 @@ class RegistroPersonalizadoForm(UserCreationForm):
         
     def clean_email(self):
         email = self.cleaned_data.get('email')
-        if UsuarioPersonalizado.objects.filter(email=email).exists():
-            raise forms.ValidationError("Ya existe un usuario con ese correo electrónico.")
+        if not email or email.strip().lower() == "opcional":
+            return None
+        if Jugador.objects.filter(email=email).exists():
+            raise forms.ValidationError("Ya existe un jugador con este correo electrónico.")
         return email
 
 class TorneoForm(forms.ModelForm):
+    nombre = forms.CharField(
+        label="Nombre del Torneo",
+        required=True,
+        max_length=100,
+        widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "Ej: Torneo de Verano"})
+    )
     fecha = forms.DateField(
         label="Fecha del Torneo",
         required=True,
-        widget=forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
+        widget=forms.DateInput(format="%Y-%m-%d", attrs={"type": "date", "class": "form-control"}),
     )
+    hora = forms.TimeField(
+        label="Hora del Torneo",
+        required=True,
+        widget=forms.TimeInput(format="%H:%M", attrs={"type": "time", "class": "form-control"}),
+    )
+    federado = forms.BooleanField(
+        label="¿Es torneo federado?",
+        required=False,
+        widget=forms.CheckboxInput(attrs={"class": "form-check-input"}),
+    )
+    ubicacion = forms.CharField(
+        label="Ubicación",
+        required=True,
+        max_length=100,
+        widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "Ej: Gimnasio Municipal"})
+    )
+    categoria = forms.ModelChoiceField(
+        label="Categoría del Torneo",
+        queryset=Categoria.objects.all(),
+        required=False,
+        widget=forms.Select(attrs={"class": "form-select"})
+    )
+    todo_competidor = forms.BooleanField(
+        label="Todo Competidor (TC)",
+        required=False,
+        widget=forms.CheckboxInput(attrs={"class": "form-check-input"})
+    )
+
     class Meta:
         model = Torneo
-        fields = ['nombre', 'fecha', 'ubicacion']
+        fields = ['nombre', 'fecha', 'hora', 'ubicacion', 'federado', 'categoria', 'todo_competidor']
 
     def clean_nombre(self):
         nombre = self.cleaned_data.get('nombre')
@@ -112,6 +161,9 @@ class ClubForm(forms.ModelForm):
 
     def clean_nombre(self):
         nombre = self.cleaned_data['nombre']
+        nombre = limpiar_texto_estricto(nombre)
+        if not nombre:
+            raise forms.ValidationError("El nombre del club es requerido.")
         if Club.objects.filter(nombre=nombre, organizador=self.organizador).exists():
             raise forms.ValidationError("Ya tienes un club con ese nombre.")
         return nombre
@@ -121,52 +173,108 @@ class CategoriaForm(forms.ModelForm):
         model = Categoria
         fields = ['nombre', 'edad_minima', 'edad_maxima']
 
+    def clean_nombre(self):
+        nombre = self.cleaned_data['nombre']
+        nombre = limpiar_texto_estricto(nombre)
+        if not nombre:
+            raise forms.ValidationError("El nombre de la categoría es requerido.")
+        return nombre
+
     def clean(self):
         cleaned_data = super().clean()
         edad_minima = cleaned_data.get('edad_minima')
         edad_maxima = cleaned_data.get('edad_maxima')
 
-        if edad_minima is not None:
-            if edad_minima < 0 or edad_minima > 99:
-                self.add_error('edad_minima', "La edad mínima debe estar entre 0 y 99.")
+        if edad_minima is not None and (edad_minima < 0 or edad_minima > 120):
+            self.add_error('edad_minima', "La edad mínima debe estar entre 0 y 120.")
 
-        if edad_maxima is not None:
-            if edad_maxima < 0 or edad_maxima > 99:
-                self.add_error('edad_maxima', "La edad máxima debe estar entre 0 y 99.")
+        if edad_maxima is not None and (edad_maxima < 0 or edad_maxima > 120):
+            self.add_error('edad_maxima', "La edad máxima debe estar entre 0 y 120.")
 
         if edad_minima is not None and edad_maxima is not None:
             if edad_minima > edad_maxima:
                 raise forms.ValidationError("La edad mínima no puede ser mayor que la edad máxima.")
 
 class JugadorForm(forms.ModelForm):
+    rut = forms.CharField(
+        label="RUT",
+        required=True,
+        max_length=12,
+        widget=forms.TextInput(attrs={
+            "placeholder": "Ej: 12345678-9",
+            "class": "form-control"
+        })
+    )
+    nombre = forms.CharField(
+        label="Nombre",
+        required=True,
+        widget=forms.TextInput(attrs={"class": "form-control"})
+    )
+    apellido = forms.CharField(
+        label="Apellido",
+        required=True,
+        widget=forms.TextInput(attrs={"class": "form-control"})
+    )
     fecha_nacimiento = forms.DateField(
         label="Fecha de nacimiento",
         required=True,
-        widget=forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
+        widget=forms.DateInput(format="%Y-%m-%d", attrs={
+            "type": "date",
+            "class": "form-control"
+        }),
     )
-
+    genero = forms.ChoiceField(
+        label="Género",
+        choices=[('M', 'Masculino'), ('F', 'Femenino')],
+        required=True,
+        widget=forms.Select(attrs={'class': 'form-select'})
+    )
+    club = forms.ModelChoiceField(
+        label="Club o Asociación",
+        queryset=Club.objects.all(),
+        required=False,
+        widget=forms.Select(attrs={'class': 'form-select'})
+    )
     email = forms.EmailField(
         label="Correo electrónico", 
         required=False, 
-        widget=forms.EmailInput(attrs={"placeholder": "Opcional"}),
-        )
+        widget=forms.EmailInput(attrs={
+            "placeholder": "Opcional",
+            "class": "form-control"
+        }),
+    )
 
     class Meta:
         model = Jugador
-        fields = ['nombre', 'apellido', 'fecha_nacimiento', 'club', 'email']
+        fields = ['rut', 'nombre', 'apellido', 'fecha_nacimiento', 'genero', 'club', 'email']
 
     def __init__(self, *args, **kwargs):
-        self.organizador = kwargs.pop('organizador', None)
         super().__init__(*args, **kwargs)
+        self.fields['club'].queryset = Club.objects.all()
 
+    def clean_rut(self):
+        rut = self.cleaned_data['rut']
+        rut = rut.replace('.', '').replace(' ', '').upper()
+        if not re.match(r'^\d{7,8}-[\dkK]$', rut):
+            raise forms.ValidationError("Ingrese un RUT válido, sin puntos y con guion. Ejemplo: 12345678-9")
+        if Jugador.objects.filter(rut=rut).exists():
+            raise forms.ValidationError("Ya existe un jugador con este RUT.")
+        return rut
+    
     def clean_nombre(self):
         nombre = self.cleaned_data['nombre']
+        nombre = limpiar_texto_estricto(nombre)
+        if not nombre:
+            raise forms.ValidationError("El nombre es requerido.")
         if len(nombre) > 50:
             raise forms.ValidationError("El nombre no puede superar los 50 caracteres.")
         return nombre
 
     def clean_apellido(self):
         apellido = self.cleaned_data['apellido']
+        apellido = limpiar_texto_estricto(apellido)
+        if not apellido:
+            raise forms.ValidationError("El apellido es requerido.")
         if len(apellido) > 50:
             raise forms.ValidationError("El apellido no puede superar los 50 caracteres.")
         return apellido
@@ -180,19 +288,63 @@ class JugadorForm(forms.ModelForm):
     def clean_email(self):
         email = self.cleaned_data.get('email')
         if email:
-            if Jugador.objects.filter(email=email).exists():
+            email = limpiar_email_estricto(email)
+            if email and Jugador.objects.filter(email=email).exists():
                 raise forms.ValidationError("Ya existe un jugador con este correo electrónico.")
-        return email
+        return email if email else None
     
     def save(self, commit=True):
         jugador = super().save(commit=False)
-        # Calcular edad
+        if not jugador.email or jugador.email.strip().lower() == "opcional":
+            jugador.email = None
         hoy = date.today()
-        edad = hoy.year - jugador.fecha_nacimiento.year - ((hoy.month, hoy.day) < (jugador.fecha_nacimiento.month, jugador.fecha_nacimiento.day))
-        # Buscar categoría
-        categoria = Categoria.objects.filter(edad_minima__lte=edad, edad_maxima__gte=edad).first()
+        edad = hoy.year - jugador.fecha_nacimiento.year - (
+            (hoy.month, hoy.day) < (jugador.fecha_nacimiento.month, jugador.fecha_nacimiento.day)
+        )
+        categoria = Categoria.objects.filter(
+            edad_minima__lte=edad,
+            edad_maxima__gte=edad
+        ).first()
         jugador.categoria = categoria
         if commit:
             jugador.save()
         return jugador
-        
+
+def limpiar_texto_estricto(texto):
+    if pd.isna(texto) or texto is None or texto == '':
+        return ''
+    
+    texto = str(texto).strip()
+    
+    texto = texto.replace('\r', ' ').replace('\n', ' ').replace('\t', ' ')
+    texto = texto.replace('_x000D_', ' ').replace('_x000A_', ' ')
+    texto = texto.replace('x000D', ' ').replace('x000A', ' ')
+    
+    texto = unicodedata.normalize('NFC', texto)
+    
+    texto = re.sub(r"[^a-zA-ZáéíóúÁÉÍÓÚñÑ0-9 .\-]", "", texto)
+    
+    texto = re.sub(r"\s+", " ", texto)
+    
+    texto = re.sub(r"-+", "-", texto)
+    
+    texto = re.sub(r"\.+", ".", texto)
+    
+    return texto.strip()
+
+def limpiar_email_estricto(email):
+    if pd.isna(email) or email is None or email == '':
+        return ''
+    
+    email = str(email).strip().lower()
+    
+    email = email.replace('\r', '').replace('\n', '').replace('\t', '')
+    email = email.replace('_x000D_', '').replace('_x000A_', '')
+    email = email.replace('x000D', '').replace('x000A', '')
+    
+    email = unicodedata.normalize('NFC', email)
+    
+    email = re.sub(r"[^a-z0-9@.\-_]", "", email)
+    
+    return email.strip()
+

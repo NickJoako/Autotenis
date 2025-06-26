@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="container">
+    <h2>Organizar Grupos - {{ torneo.nombre }}</h2>
+    
+    {% if messages %}
+      {% for message in messages %}
+        <div class="alert alert-success alert-dismissible fade show" role="alert">
+          {{ message }}
+          <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+      {% endfor %}
+    {% endif %}
+    
+    <hr>
+    
+    <!-- Información del torneo -->
+    <div class="row mb-4">
+      <div class="col-md-8">
+        <div class="card border-success">
+          <div class="card-header bg-success text-white">
+            <h5 class="mb-0"><i class="fas fa-info-circle"></i> Información del Torneo</h5>
+          </div>
+          <div class="card-body">
+            <div class="row">
+              <div class="col-md-6">
+                <p><strong>Modalidad:</strong> Fases de Grupos</p>
+                <p><strong>Participantes:</strong> {{ num_participantes }} jugadores</p>
+                <p><strong>Distribución:</strong> 
+                  {% if grupos_de_3 > 0 %}{{ grupos_de_3 }} grupo{{ grupos_de_3|pluralize }} de 3{% endif %}
+                  {% if grupos_de_4 > 0 %}{% if grupos_de_3 > 0 %} + {% endif %}{{ grupos_de_4 }} grupo{{ grupos_de_4|pluralize }} de 4{% endif %}
+                </p>
+              </div>              <div class="col-md-6">
+                <p><strong>Total de grupos:</strong> {{ total_grupos }}</p>
+                <p><strong>Clasifican:</strong> {{ clasificados_total }} jugadores (2 por grupo)</p>
+                <p><strong>Estado:</strong> <span class="badge bg-success">Torneo Iniciado</span></p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="col-md-4">
+        <div class="card border-warning">
+          <div class="card-header bg-warning">
+            <h6 class="mb-0"><i class="fas fa-lightbulb"></i> Opciones de Asignación</h6>
+          </div>
+          <div class="card-body">
+            <form method="post">
+              {% csrf_token %}
+              <button type="submit" name="definir_cabezas" class="btn btn-primary w-100 mb-2">
+                <i class="fas fa-crown"></i> Definir Cabezas de Serie
+              </button>
+              <button type="submit" name="asignar_automatico" class="btn btn-success w-100"
+                      onclick="return confirm('¿Asignar grupos automáticamente? Esto mezclará a todos los jugadores aleatoriamente.');">
+                <i class="fas fa-random"></i> Asignación Automática
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mostrar grupos existentes -->
+    {% if grupos_existentes %}
+      <div class="card">
+        <div class="card-header bg-info text-white">
+          <h5 class="mb-0"><i class="fas fa-users"></i> Grupos Formados</h5>
+        </div>
+        <div class="card-body">
+          <div class="row">
+            {% for grupo in grupos_existentes %}
+              <div class="col-md-6 col-lg-4 mb-3">
+                <div class="card border-secondary">
+                  <div class="card-header bg-secondary text-white text-center">
+                    <h6 class="mb-0">Grupo {{ grupo.nombre }}</h6>
+                  </div>
+                  <div class="card-body p-2">
+                    {% for participante in grupo.participantes.all %}
+                      <div class="d-flex justify-content-between align-items-center border-bottom py-1">
+                        <span>
+                          {{ participante.posicion_grupo }}. {{ participante.jugador.nombre }} {{ participante.jugador.apellido }}
+                          {% if participante.es_cabeza_serie %}
+                            <i class="fas fa-crown text-warning" title="Cabeza de serie"></i>
+                          {% endif %}
+                        </span>
+                        <small class="text-muted">{{ participante.jugador.calcular_categoria }}</small>
+                      </div>
+                    {% endfor %}
+                  </div>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+          
+          <div class="text-center mt-3">
+            <a href="{% url 'vista_previa_asignacion_pagina' torneo.id %}" class="btn btn-purple me-2">
+              <i class="fas fa-eye"></i> Vista Previa de Asignación
+            </a>
+            <form method="post" style="display: inline;">
+              {% csrf_token %}
+              <button type="submit" name="resetear_grupos" class="btn btn-info me-2"
+                      onclick="return confirm('¿Resetear grupos? Esto eliminará la asignación actual y volverá a mostrar la lista de participantes.');">
+                <i class="fas fa-undo"></i> Resetear Grupos
+              </button>
+              <button type="submit" name="reorganizar_grupos" class="btn btn-warning me-2"
+                      onclick="return confirm('¿Reorganizar grupos? Si hay cabezas de serie definidas, se mantendrán en sus posiciones. Los demás jugadores serán mezclados aleatoriamente para definir el orden de asignación, y luego se repartirán a los grupos siguiendo el patrón de serpenteo.');">
+                <i class="fas fa-sync-alt"></i> Reorganizar Grupos
+              </button>
+            </form>
+            <a href="#" class="btn btn-success">
+              <i class="fas fa-play"></i> Continuar
+            </a>
+          </div>
+        </div>
+      </div>
+    {% else %}
+      <!-- Mostrar participantes sin asignar -->
+      <div class="card">
+        <div class="card-header bg-light">
+          <h5 class="mb-0"><i class="fas fa-list"></i> Participantes del Torneo</h5>
+        </div>
+        <div class="card-body">
+          <div class="row">
+            {% for participacion in participantes %}
+              <div class="col-md-6 col-lg-4 mb-2">
+                <div class="card border-light">
+                  <div class="card-body p-2">
+                    <div class="d-flex justify-content-between">
+                      <span>{{ participacion.jugador.nombre }} {{ participacion.jugador.apellido }}</span>
+                      <small class="text-muted">{{ participacion.jugador.calcular_categoria }}</small>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+          
+          <div class="text-center mt-3">
+            <p class="text-muted">Los participantes aún no han sido asignados a grupos. Usa las opciones de arriba para organizarlos.</p>
+          </div>
+        </div>
+      </div>
+    {% endif %}    <!-- Botones de navegación -->
+    <div class="text-center mt-4">
+      <a href="{% url 'lista_torneos' %}" class="btn btn-secondary">
+        <i class="fas fa-arrow-left"></i> Volver a Mis Torneos
+      </a>
+    </div>
+  </div>
+
+  <style>
+    .btn-purple {
+      background-color: #6f42c1;
+      border-color: #6f42c1;
+      color: white;
+    }
+    .btn-purple:hover {
+      background-color: #5a359a;
+      border-color: #5a359a;
+      color: white;
+    }
+  </style>
+{% endblock %}

@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% load static %}
+{% block content %}
+  <div class="container">
+    <h2>Modalidad: Fases de Grupos</h2>
+    <h4 class="text-muted mb-4">{{ torneo.nombre }}</h4>
+    
+    <!-- Cuadro explicativo -->
+    <div class="card mb-4">
+      <div class="card-header bg-success">
+        <h5 class="mb-0"><i class="fas fa-layer-group"></i> ¿Cómo funciona la modalidad Fases de Grupos?</h5>
+      </div>
+      <div class="card-body">
+        <div class="row">
+          <div class="col-md-8">
+            <h6>Características principales:</h6>
+            <ul>
+              <li><strong>Dos etapas:</strong> Primero grupos, luego eliminación directa</li>
+              <li><strong>Más partidos garantizados:</strong> Cada jugador juega mínimo 3-4 partidos</li>
+              <li><strong>Más justo:</strong> Una mala racha no elimina inmediatamente</li>
+              <li><strong>Mayor duración:</strong> Ideal para torneos con más tiempo disponible</li>
+            </ul>
+              <h6 class="mt-3">Estructura del torneo:</h6>
+            <ul>
+              <li><strong>Fase de grupos:</strong> Se forman grupos de 3-4 jugadores</li>
+              <li><strong>Todos contra todos:</strong> En cada grupo, todos juegan entre sí</li>
+              <li><strong>Clasificación:</strong> El primer y segundo lugar clasifican a la llave</li>
+              <li><strong>Fase eliminatoria:</strong> Los clasificados juegan llaves hasta la final</li>
+            </ul>
+
+            <h6 class="mt-3">Sistema de puntuación y desempates:</h6>
+            <ul>
+              <li><strong>Puntos por partido:</strong> Victoria = 2 puntos, Derrota = 1 punto</li>
+              <li><strong>Primer criterio:</strong> Mayor cantidad de puntos en la fase de grupos</li>
+              <li><strong>Segundo criterio:</strong> Coeficiente de sets (sets ganados ÷ sets perdidos)</li>
+              <li><strong>Tercer criterio:</strong> Coeficiente de puntos (puntos ganados ÷ puntos perdidos)</li>
+            </ul>
+            
+            <div class="alert alert-warning mt-2 mb-0">
+              <small><i class="fas fa-info-circle"></i> <strong>Nota:</strong> Los coeficientes se utilizan únicamente en caso de empate por puntos. El coeficiente de sets es el más común para desempatar, mientras que el coeficiente de puntos raramente se necesita.</small>
+            </div>
+          </div>          <div class="col-md-4">
+            <div class="alert alert-info">
+              <strong>Participantes actuales:</strong> {{ num_participantes }} jugadores
+              <br>
+              {% if grupos_info.error %}
+                <strong>⚠️ {{ grupos_info.error }}</strong>
+              {% else %}
+                <strong>Distribución de grupos:</strong>
+                <br>
+                {% if grupos_info.grupos_de_3 > 0 %}
+                  • {{ grupos_info.grupos_de_3 }} grupo{{ grupos_info.grupos_de_3|pluralize }} de 3 jugadores
+                  <br>
+                {% endif %}
+                {% if grupos_info.grupos_de_4 > 0 %}
+                  • {{ grupos_info.grupos_de_4 }} grupo{{ grupos_info.grupos_de_4|pluralize }} de 4 jugadores
+                  <br>
+                {% endif %}
+                <strong>Total:</strong> {{ grupos_info.total_grupos }} grupo{{ grupos_info.total_grupos|pluralize }}
+                <br>
+                <strong>Clasifican:</strong> {{ grupos_info.clasificados }} jugadores (2 por grupo)
+                <br><br>
+                <strong>Fase eliminatoria:</strong>
+                <br>
+                • Bracket de {{ grupos_info.potencia_2_siguiente }} jugadores
+                <br>
+                • {{ grupos_info.rondas_eliminatoria }} ronda{{ grupos_info.rondas_eliminatoria|pluralize }}
+                <br>
+                {% if grupos_info.es_bracket_perfecto %}
+                  • No necesita BYE (bracket perfecto)
+                {% else %}
+                  • {{ grupos_info.byes_eliminatoria }} BYE necesarias
+                {% endif %}
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Ejemplo visual -->
+    <div class="card mb-3">
+      <div class="card-header">
+        <h5 class="mb-0"><i class="fas fa-eye"></i> Ejemplo visual</h5>
+      </div>
+      <div class="card-body text-center p-2">
+        <!-- Imagen del sistema de grupos con mayor resolución -->
+        <div class="mb-2">
+          <img src="{% static 'imagenes/fase_grupos.png' %}" 
+               alt="Ejemplo de fase de grupos" 
+               class="img-fluid" 
+               style="max-width: 1000px; width: 100%; height: auto; border: 1px solid #ddd; border-radius: 8px; background-color: white;">
+        </div>
+      </div>
+    </div>
+    
+    <!-- Texto explicativo fuera del cuadro -->
+    <div class="text-center mb-4">
+      <small class="text-muted"><strong>Ejemplo:</strong> 8 participantes → fase de grupos + eliminación directa</small>
+    </div>    <!-- Botones de acción -->
+    <div class="text-center">
+      <form method="post" style="display: inline;">
+        {% csrf_token %}
+        <button type="submit" name="iniciar_grupos" class="btn btn-success btn-lg me-3 mb-2"
+                onclick="return confirm('¿Estás seguro de que quieres iniciar el torneo por grupos? Esta acción bloqueará la modalidad y no podrás cambiarla después.');">
+          <i class="fas fa-play"></i> Iniciar Torneo por Grupos
+        </button>
+      </form>
+      <a href="{% url 'gestionar_torneo' torneo.id %}" class="btn btn-secondary btn-lg mb-2">
+        ← Volver a opciones
+      </a>
+    </div>
+  </div>
+{% endblock %}

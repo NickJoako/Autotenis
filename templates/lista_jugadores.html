@@ -1,78 +1,118 @@
 {% extends "base.html" %}
+{% load static %}
 
 {% block content %}
   <h2 class="text-center">Lista de Jugadores</h2>
   <hr>
-  <div class="container">
-    <h4 class="mt-4">Agregar Jugador</h4>
-    <form method="post" class="mt-3">
-      {% csrf_token %}
-      {{ form.non_field_errors }}
-      <div class="mb-3">
-        <label>{{ form.nombre.label }}</label>
-        {{ form.nombre }}
-        {{ form.nombre.errors }}
+  
+  <!-- Mostrar mensajes de error y éxito -->
+  {% if messages %}
+    {% for message in messages %}
+      <div class="alert {% if message.tags == 'error' %}alert-danger{% elif message.tags == 'success' %}alert-success{% else %}alert-info{% endif %} alert-dismissible fade show" role="alert">
+        {{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
       </div>
-      <div class="mb-3">
-        <label>{{ form.apellido.label }}</label>
-        {{ form.apellido }}
-        {{ form.apellido.errors }}
-      </div>
-      <div class="mb-3">
-        <label>{{ form.fecha_nacimiento.label }}</label>
-        {{ form.fecha_nacimiento }}
-        {{ form.fecha_nacimiento.errors }}
-      </div>
-      <div class="mb-3">
-        <label>{{ form.club.label }}</label>
-        {{ form.club }}
-        {{ form.club.errors }}
-      </div>
-      <div class="mb-3">
-        <label>{{ form.email.label }}</label>
-        {{ form.email }}
-        {{ form.email.errors }}
-      </div>
-      <button type="submit" name="agregar" class="btn btn-primary">Agregar Jugador</button>
-    </form>
-  </div>
-  <hr>  
-  <div class="container">
+    {% endfor %}
+  {% endif %}
+
+  {% if errores_importacion %}
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+      <strong>Errores en la importación:</strong>
+      <ul class="mb-0">
+        {% for error in errores_importacion %}
+          <li>{{ error }}</li>
+        {% endfor %}
+      </ul>
+      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+  {% endif %}
+
+  <form method="get" class="mb-3">
+      <h4 class="mt-4">Buscar Jugador</h4>
+    <input type="text" name="q" placeholder="Buscar por RUT (Ej: 12345678-9)" value="{{ query }}" class="form-control" />    <button type="submit" class="btn btn-primary mt-2">Buscar</button>
+  </form>
+  <hr>
+  {% if query %}
+  <div class="container mb-4">
     <table class="table table-striped">
-      <thead>
+      <thead class="table-dark">
         <tr>
+          <th>RUT</th>
           <th>Nombre</th>
           <th>Apellido</th>
           <th>Fecha de nacimiento</th>
+          <th>Género</th>
           <th>Categoría</th>
-          <th>Club</th>
+          <th>Club o Asociación</th>
           <th>Correo</th>
-          <th>Acciones</th>
         </tr>
       </thead>
       <tbody>
         {% for jugador in jugadores %}
           <tr>
+            <td>{{ jugador.rut }}</td>
             <td>{{ jugador.nombre }}</td>
             <td>{{ jugador.apellido }}</td>
             <td>{{ jugador.fecha_nacimiento }}</td>
-            <td>{{ jugador.categoria }}</td>
+            <td>{{ jugador.genero }}</td>
+            <td>{{ jugador.calcular_categoria }}</td>
             <td>{{ jugador.club|default:"Sin club" }}</td>
-            <td>{{ jugador.email|default:"Sin correo" }}</td>
             <td>
-              <form method="post" style="display:inline;">
-                {% csrf_token %}
-                <input type="hidden" name="jugador_id" value="{{ jugador.id }}">
-                <button type="submit" name="eliminar" class="btn btn-danger btn-sm">Eliminar</button>
-              </form>
-            </td> 
+              {% if not jugador.email %}
+                Sin correo
+                <a href="{% url 'anadir_correo_jugador' jugador.id %}" class="btn btn-sm btn-outline-primary ms-2">Añadir correo</a>
+              {% else %}
+                {{ jugador.email }}
+                <a href="{% url 'anadir_correo_jugador' jugador.id %}" class="btn btn-sm btn-success ms-2">Editar correo</a>
+              {% endif %}
+            </td>
           </tr>
         {% empty %}
           <tr>
-            <td colspan="7" class="text-center">No hay jugadores registrados.</td>
-          </tr> 
+            <td colspan="8" class="text-center">No hay jugadores registrados.</td>
+          </tr>
         {% endfor %}
       </tbody>
     </table>
+  </div>
+  {% endif %}
+  <div class="container">
+    <h4 class="mt-4">Agregar Jugador</h4>
+    <form method="post" class="mt-3">
+      {% csrf_token %}
+      {{ form.as_p }}
+      <button type="submit" name="agregar" class="btn btn-primary">Agregar Jugador</button>
+    </form>    <hr>
+    
+    <!-- Sección de importación por Excel -->
+    <div class="card mb-4">
+      <div class="card-header">
+        <h5 class="mb-0">Importar jugadores desde Excel</h5>
+      </div>
+      <div class="card-body">
+        <form method="post" enctype="multipart/form-data" action="{% url 'importar_jugadores' %}">
+          {% csrf_token %}
+          <div class="row align-items-end">
+            <div class="col-md-6">
+              <label for="archivo" class="form-label">Archivo Excel con datos de jugadores (.xlsx)</label>
+              <input type="file" name="archivo" class="form-control" accept=".xlsx,.xls" required>
+              <small class="form-text text-muted">
+                El archivo debe contener las columnas: RUT, Nombre, Apellido, Fecha de nacimiento, Género, Club o Asociación, Email.
+              </small>
+            </div>
+            <div class="col-md-3">
+              <button type="submit" class="btn btn-success">
+                <i class="fas fa-upload"></i> Importar
+              </button>
+            </div>
+            <div class="col-md-3">
+              <a href="{% static 'plantillas/plantilla_jugadores.xlsx' %}" class="btn btn-outline-info">
+                <i class="fas fa-download"></i> Descargar plantilla
+              </a>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
   </div>
 {% endblock %}

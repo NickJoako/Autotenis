@@ -14,7 +14,7 @@
     {% if user.is_authenticated and request.path != '/login/' and request.path != '/registro/' %}
       <div class="d-flex" style="min-height: 100vh;">
         <!-- Sidebar -->
-        <nav class="d-flex flex-column flex-shrink-0 p-3 text-white bg-dark" style="width: 280px;">
+        <nav class="sidebar-fixed d-flex flex-column flex-shrink-0 p-3 text-white bg-dark" style="width: 220px;">
           <a href="/" class="d-flex align-items-center mb-3 mb-md-0 me-md-auto text-white text-decoration-none">
             <svg class="bi me-2" width="40" height="32"><use xlink:href="#bootstrap"/></svg>
             <span class="fs-4">AutoTenis</span>
@@ -32,18 +32,18 @@
               </a>
             </li>
             <li>
-              <a href="{% url 'lista_categorias' %}" class="nav-link {% if request.resolver_match.url_name == 'lista_categorias' %}active{% else %}text-white{% endif %}">
-                Categorias
-              </a>
-            </li>
-            <li>
               <a href="{% url 'lista_jugadores' %}" class="nav-link {% if request.resolver_match.url_name == 'lista_jugadores' %}active{% else %}text-white{% endif %}">
                 Jugadores
               </a>
             </li>
             <li>
+              <a href="{% url 'lista_categorias' %}" class="nav-link {% if request.resolver_match.url_name == 'lista_categorias' %}active{% else %}text-white{% endif %}">
+                Categorias
+              </a>
+            </li>
+            <li>
               <a href="{% url 'lista_clubes' %}" class="nav-link {% if request.resolver_match.url_name == 'lista_clubes' %}active{% else %}text-white{% endif %}">
-                Clubes
+                Clubes o Asociaciones
               </a>
             </li>
           </ul>
@@ -70,7 +70,7 @@
           </div>
         </nav>
         <!-- Contenido principal -->
-        <div class="flex-grow-1 p-4 d-flex flex-column">
+        <div class="main-content flex-grow-1 p-4 d-flex flex-column">
           {% block content %}{% endblock %}
           <footer class="mt-auto pt-4">
             <p>&copy; 2025 AutoTenis. Todos los derechos reservados.</p>

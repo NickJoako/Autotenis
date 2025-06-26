@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% load static %}
+{% block content %}
+  <div class="container">    <h2>Modalidad: Llaves (Brackets)</h2>
+    <h4 class="text-muted mb-4">{{ torneo.nombre }}</h4>
+    
+    <!-- Cuadro explicativo -->
+    <div class="card mb-4">
+      <div class="card-header bg-warning">
+        <h5 class="mb-0"><i class="fas fa-sitemap"></i> ¿Cómo funciona la modalidad Llaves?</h5>
+      </div>
+      <div class="card-body">
+        <div class="row">
+          <div class="col-md-8">
+            <h6>Características principales:</h6>
+            <ul>
+              <li><strong>Eliminación directa:</strong> Los jugadores que pierdan un partido quedan eliminados del torneo</li>
+              <li><strong>Sistema de brackets:</strong> Se crean llaves donde cada jugador avanza hasta ser eliminado</li>
+              <li><strong>Rápido y eficiente:</strong> Ideal para torneos con muchos participantes y poco tiempo</li>
+              <li><strong>Un solo campeón:</strong> Solo queda un ganador al final</li>
+            </ul>
+            
+            <h6 class="mt-3">Estructura del torneo:</h6>
+            <ul>
+              <li>Primera ronda: Todos los participantes juegan</li>
+              <li>Rondas siguientes: Solo avanzan los ganadores</li>
+              <li>Semifinales: 4 jugadores</li>
+              <li>Final: 2 jugadores</li>
+            </ul>
+          </div>          <div class="col-md-4">            <div class="alert alert-info">
+              <strong>Participantes actuales:</strong> {{ num_participantes }} jugadores
+              <br>
+              <strong>Rondas necesarias:</strong> {{ rondas_necesarias }} rondas
+              <br>
+              <strong>BYE necesarias:</strong>
+              {% if es_bracket_perfecto %}
+                No necesita BYE (bracket perfecto)
+              {% else %}
+                {{ byes_necesarias }} BYE (para completar bracket de {{ potencia_2_siguiente }})
+              {% endif %}          </div>
+        </div>
+        
+        <!-- Nota de advertencia sobre BYEs (solo cuando no es bracket perfecto) -->
+        {% if not es_bracket_perfecto %}
+          <div class="alert alert-warning mt-3 mb-0">
+            <i class="fas fa-exclamation-triangle"></i>
+            <strong>Nota importante:</strong> Se recomienda utilizar BYEs en torneos tipo solo una llave cuando el número de participantes no coincide con 2, 4, 8, 16, 32, 64, 128... (múltiplos de 2) para que todos jueguen la misma cantidad de partidos.
+          </div>
+        {% endif %}
+      </div>
+    </div>
+    </div>    <!-- Ejemplo visual -->
+    <div class="card mb-3">
+      <div class="card-header">
+        <h5 class="mb-0"><i class="fas fa-eye"></i> Ejemplo visual</h5>
+      </div>
+      <div class="card-body text-center p-2">
+        <!-- Imagen del bracket con mayor resolución -->
+        <div class="mb-2">
+          <img src="{% static 'imagenes/llaves_bracket.drawio.png' %}" 
+               alt="Ejemplo de bracket de torneo" 
+               class="img-fluid" 
+               style="max-width: 700px; width: 100%; height: auto; border: 1px solid #ddd; border-radius: 8px; background-color: white;">
+        </div>
+      </div>
+    </div>
+    
+    <!-- Texto explicativo fuera del cuadro -->
+    <div class="text-center mb-4">
+      <small class="text-muted"><strong>Ejemplo:</strong> 8 participantes → eliminación directa</small>
+    </div>
+
+    <!-- Botones de acción -->
+    <div class="text-center">
+      <form method="post" style="display: inline;">
+        {% csrf_token %}
+        <button type="" name="iniciar_llaves" class="btn btn-warning btn-lg me-3 mb-2">
+          <i class="fas fa-play"></i> Iniciar Torneo con Llaves
+        </button>
+      </form>
+      <a href="{% url 'gestionar_torneo' torneo.id %}" class="btn btn-secondary btn-lg mb-2">
+        ← Volver a opciones
+      </a>
+    </div>
+  </div>
+{% endblock %}

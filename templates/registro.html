@@ -47,6 +47,11 @@
             </div>
             <button type="submit" class="w-100 btn btn-primary mb-2">Registrarme</button>
         </form>
+        {% if messages %}
+          {% for message in messages %}
+            <div class="alert alert-success mt-2 text-center">{{ message }}</div>
+          {% endfor %}
+        {% endif %}
         <p class="text-center"><a href="{% url 'login' %}">Volver al login</a></p>
       </div>
     </div>

@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% block content %}
+  <h2>Participantes de {{ torneo.nombre }}</h2>
+  <hr>
+  
+  <!-- Mostrar mensajes de error y éxito -->
+  {% if messages %}
+    {% for message in messages %}
+      <div class="alert {% if message.tags == 'error' %}alert-danger{% elif message.tags == 'success' %}alert-success{% else %}alert-info{% endif %} alert-dismissible fade show" role="alert">
+        {{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  <!-- Botón para cerrar inscripciones o mostrar estado -->
+  {% if not torneo.inscripciones_cerradas %}
+    <div class="mb-3">
+      <form method="post" style="display:inline;">
+        {% csrf_token %}
+        <button type="submit" name="cerrar_inscripciones" class="btn btn-warning" 
+                onclick="return confirm('¿Estás seguro de que quieres cerrar las inscripciones? Esta acción no se puede deshacer y ya no podrás agregar o eliminar participantes.');">
+          <i class="fas fa-lock"></i> Cerrar inscripción de jugadores
+        </button>
+      </form>
+      <span class="text-muted ms-2">(No podrás modificar la lista después de cerrar las inscripciones)</span>
+    </div>
+  {% else %}
+    <div class="alert alert-warning mb-3">
+      <i class="fas fa-lock"></i> <strong>Las inscripciones están cerradas.</strong> No se pueden agregar o eliminar participantes.
+    </div>  {% endif %}  
+  
+  <!-- Botón de navegación contextual -->
+  {% if torneo.inscripciones_cerradas %}
+    <a href="{% url 'gestionar_torneo' torneo.id %}" class="btn btn-success mb-3">
+      <i class="fas fa-gamepad"></i> Modalidades del torneo
+    </a>
+  {% else %}
+    <a href="{% url 'gestionar_torneo' torneo.id %}" class="btn btn-secondary mb-3">
+      <i class="fas fa-arrow-left"></i> Volver
+    </a>
+  {% endif %}
+  
+  <!-- Campo de búsqueda en tiempo real -->
+  <div class="mb-3">
+    <div class="input-group">
+      <span class="input-group-text"><i class="fas fa-search"></i></span>
+      <input type="text" id="searchInput" class="form-control" placeholder="Buscar participantes por nombre, apellido, RUT, categoría, club o correo...">
+    </div>
+    <small class="text-muted">La búsqueda incluye RUT aunque no se muestre en la tabla</small>
+  </div>
+
+  <table class="table table-striped" id="participantesTable">
+    <thead>
+      <tr>
+        <th>Nombre</th>
+        <th>Apellido</th>
+        <th>Fecha de nacimiento</th>
+        <th>Género</th>
+        <th>Categoría</th>
+        <th>Club</th>
+        <th>Correo</th>
+        {% if not torneo.inscripciones_cerradas %}
+          <th>Acciones</th>
+        {% endif %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for jugador in participantes %}
+        <tr data-rut="{{ jugador.rut }}" data-nombre="{{ jugador.nombre }}" data-apellido="{{ jugador.apellido }}" 
+            data-categoria="{{ jugador.calcular_categoria }}" data-club="{{ jugador.club|default:"Sin club" }}" 
+            data-correo="{{ jugador.email|default:"Sin correo" }}">
+          <td>{{ jugador.nombre }}</td>
+          <td>{{ jugador.apellido }}</td>
+          <td>{{ jugador.fecha_nacimiento }}</td>
+          <td>{{ jugador.genero }}</td>
+          <td>{{ jugador.calcular_categoria }}</td>
+          <td>{{ jugador.club|default:"Sin club" }}</td>
+          <td>{{ jugador.email|default:"Sin correo" }}</td>
+          {% if not torneo.inscripciones_cerradas %}
+            <td>
+              <form method="post" action="{% url 'eliminar_participante' torneo.id jugador.rut %}" style="display: inline;" 
+                    onsubmit="return confirm('¿Estás seguro de que quieres eliminar a {{ jugador.nombre }} {{ jugador.apellido }} del torneo?');">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-danger btn-sm">
+                  <i class="fas fa-trash"></i> Eliminar
+                </button>
+              </form>
+            </td>
+          {% endif %}
+        </tr>
+      {% empty %}
+        <tr id="noResultsRow">
+          <td colspan="{% if torneo.inscripciones_cerradas %}7{% else %}8{% endif %}" class="text-center">No hay participantes inscritos aún.</td>
+        </tr>
+      {% endfor %}    </tbody>
+  </table>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const searchInput = document.getElementById('searchInput');
+    const table = document.getElementById('participantesTable');
+    const tbody = table.querySelector('tbody');
+    const rows = tbody.querySelectorAll('tr:not(#noResultsRow)');
+    const noResultsRow = document.getElementById('noResultsRow');
+
+    searchInput.addEventListener('input', function() {
+        const searchTerm = this.value.toLowerCase().trim();
+        let visibleRows = 0;
+
+        rows.forEach(function(row) {
+            const rut = row.getAttribute('data-rut').toLowerCase();
+            const nombre = row.getAttribute('data-nombre').toLowerCase();
+            const apellido = row.getAttribute('data-apellido').toLowerCase();
+            const categoria = row.getAttribute('data-categoria').toLowerCase();
+            const club = row.getAttribute('data-club').toLowerCase();
+            const correo = row.getAttribute('data-correo').toLowerCase();
+            
+            // Buscar en todos los campos
+            const searchableText = `${rut} ${nombre} ${apellido} ${categoria} ${club} ${correo}`;
+            
+            if (searchableText.includes(searchTerm)) {
+                row.style.display = '';
+                visibleRows++;
+            } else {
+                row.style.display = 'none';
+            }
+        });
+
+        // Mostrar mensaje "No se encontraron resultados" si no hay filas visibles
+        if (visibleRows === 0 && searchTerm !== '') {
+            if (!document.getElementById('searchNoResults')) {
+                const noResultsSearchRow = document.createElement('tr');
+                noResultsSearchRow.id = 'searchNoResults';
+                noResultsSearchRow.innerHTML = `<td colspan="{% if torneo.inscripciones_cerradas %}7{% else %}8{% endif %}" class="text-center text-muted">No se encontraron participantes que coincidan con la búsqueda</td>`;
+                tbody.appendChild(noResultsSearchRow);
+            }
+        } else {
+            const searchNoResults = document.getElementById('searchNoResults');
+            if (searchNoResults) {
+                searchNoResults.remove();
+            }
+        }
+    });
+});
+</script>
+{% endblock %}
