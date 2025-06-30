@@ -1,11 +1,34 @@
 #!/usr/bin/env python
-"""Django's command-line utility for administrative tasks."""
+"""
+Utilidad de línea de comandos de Django para el proyecto AutoTenis.
+
+Este script proporciona acceso a las herramientas administrativas de Django
+para el sistema de gestión de torneos de tenis, incluyendo:
+- Ejecución del servidor de desarrollo
+- Migraciones de base de datos
+- Creación de superusuarios
+- Comandos personalizados
+
+Uso:
+    python manage.py <comando> [opciones]
+
+Ejemplos:
+    python manage.py runserver          # Ejecutar servidor de desarrollo
+    python manage.py makemigrations     # Crear migraciones
+    python manage.py migrate            # Aplicar migraciones
+    python manage.py createsuperuser    # Crear superusuario
+"""
 import os
 import sys
 
 
 def main():
-    """Run administrative tasks."""
+    """
+    Ejecuta tareas administrativas de Django.
+    
+    Configura las variables de entorno necesarias y ejecuta
+    los comandos de gestión de Django.
+    """
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'AutoTenis.settings')
     try:
         from django.core.management import execute_from_command_line

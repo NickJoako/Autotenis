@@ -1,60 +1,355 @@
-{% extends "base.html" %}
 {% load static %}
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AutoTenis - Crear Cuenta</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+      body {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        padding: 2rem 0;
+      }
+      .register-card {
+        background: rgba(255, 255, 255, 0.95);
+        border-radius: 20px;
+        box-shadow: 0 8px 32px rgba(31, 38, 135, 0.37);
+        backdrop-filter: blur(4px);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        max-width: 600px;
+        width: 100%;
+      }
+      .register-header {
+        background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+        color: white;
+        border-radius: 20px 20px 0 0;
+        padding: 2rem;
+        text-align: center;
+      }
+      .form-floating > .form-control,
+      .form-floating > .form-select {
+        border-radius: 12px;
+        border: 2px solid rgba(102, 126, 234, 0.2);
+        transition: all 0.3s ease;
+        background-color: rgba(255, 255, 255, 0.9);
+      }
+      .form-floating > .form-control:focus,
+      .form-floating > .form-select:focus {
+        border-color: #667eea;
+        box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+        background-color: white;
+      }
+      .form-floating > label {
+        color: #6c757d;
+        font-weight: 500;
+      }
+      .btn-register {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border: none;
+        border-radius: 12px;
+        padding: 12px 24px;
+        color: white;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        font-size: 1rem;
+      }
+      .btn-register:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+        color: white;
+      }
+      .btn-login-link {
+        background: transparent;
+        border: 2px solid #667eea;
+        border-radius: 12px;
+        padding: 10px 24px;
+        color: #667eea;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        text-decoration: none;
+        display: inline-block;
+      }
+      .btn-login-link:hover {
+        background: #667eea;
+        color: white;
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+      }
+      .logo-container {
+        width: 80px;
+        height: 80px;
+        background: rgba(255, 255, 255, 0.2);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 1rem;
+      }
+      .alert-success-custom {
+        border-radius: 12px;
+        border: none;
+        background: rgba(25, 135, 84, 0.1);
+        color: #0a3622;
+        border-left: 4px solid #198754;
+      }
+      .alert-danger-custom {
+        border-radius: 12px;
+        border: none;
+        background: rgba(220, 53, 69, 0.1);
+        color: #721c24;
+        border-left: 4px solid #dc3545;
+      }
+      .field-row {
+        background: rgba(255, 255, 255, 0.5);
+        border-radius: 12px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+        transition: all 0.3s ease;
+      }
+      .field-row:hover {
+        background: rgba(255, 255, 255, 0.7);
+        transform: translateY(-1px);
+      }
+      .field-errors {
+        color: #dc3545;
+        font-size: 0.875rem;
+        margin-top: 0.25rem;
+      }
+      .field-errors ul {
+        margin: 0;
+        padding-left: 1.2rem;
+      }
+      
+      /* Responsive adjustments */
+      @media (max-width: 768px) {
+        body {
+          padding: 1rem 0;
+        }
+        .container-fluid {
+          padding: 1rem !important;
+        }
+        .register-card {
+          max-width: 100%;
+          margin: 0 1rem;
+        }
+        .register-header {
+          padding: 1.5rem;
+        }
+        .register-header h1 {
+          font-size: 1.5rem;
+        }
+        .field-row {
+          padding: 0.75rem;
+        }
+        .btn-register, .btn-login-link {
+          padding: 10px 20px;
+          font-size: 0.9rem;
+        }
+      }
+      
+      @media (max-width: 576px) {
+        .register-header {
+          padding: 1rem;
+        }
+        .register-header h1 {
+          font-size: 1.3rem;
+        }
+        .logo-container {
+          width: 60px;
+          height: 60px;
+        }
+        .field-row {
+          padding: 0.5rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container-fluid d-flex align-items-center justify-content-center min-vh-100">
+      <div class="register-card">
+        <!-- Header -->
+        <div class="register-header">
+          <div class="logo-container">
+            <i class="bi bi-person-plus-fill fs-1"></i>
+          </div>
+          <h1 class="mb-2">Crear Cuenta Nueva</h1>
+          <p class="mb-0 opacity-90">Únete a la comunidad de AutoTenis</p>
+        </div>
 
-{% block login_content %}
-<div class="container-fluid vh-100">
-  <div class="row h-100 justify-content-center align-items-center">
-    <div class="col-auto">
-      <div class="bg-white p-4 rounded shadow" style="max-width: 400px;">
-        <h2 class="mb-4 text-center">Registrarse</h2>
-        <form method="post">
+        <!-- Form -->
+        <div class="p-4">
+          <form method="post">
             {% csrf_token %}
-            {{ form.non_field_errors }}
-            <div class="mb-3 row align-items-center">
-              <label class="col-5 col-form-label">{{ form.username.label }}</label>
-              <div class="col-7">
+            
+            <!-- Errores generales del formulario -->
+            {% if form.non_field_errors %}
+              <div class="alert alert-danger-custom mb-3" role="alert">
+                <i class="bi bi-exclamation-triangle me-2"></i>
+                {{ form.non_field_errors }}
+              </div>
+            {% endif %}
+
+            <!-- Campo Username -->
+            <div class="field-row">
+              <div class="form-floating">
                 {{ form.username }}
-                {{ form.username.errors }}
+                <label for="{{ form.username.id_for_label }}">
+                  <i class="bi bi-person me-2"></i>{{ form.username.label }}
+                </label>
+              </div>
+              {% if form.username.errors %}
+                <div class="field-errors">
+                  <i class="bi bi-exclamation-circle me-1"></i>
+                  {{ form.username.errors }}
+                </div>
+              {% endif %}
+            </div>
+
+            <!-- Campos Nombre y Apellido en fila -->
+            <div class="row">
+              <div class="col-md-6">
+                <div class="field-row">
+                  <div class="form-floating">
+                    {{ form.first_name }}
+                    <label for="{{ form.first_name.id_for_label }}">
+                      <i class="bi bi-card-text me-2"></i>{{ form.first_name.label }}
+                    </label>
+                  </div>
+                  {% if form.first_name.errors %}
+                    <div class="field-errors">
+                      <i class="bi bi-exclamation-circle me-1"></i>
+                      {{ form.first_name.errors }}
+                    </div>
+                  {% endif %}
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="field-row">
+                  <div class="form-floating">
+                    {{ form.last_name }}
+                    <label for="{{ form.last_name.id_for_label }}">
+                      <i class="bi bi-card-text me-2"></i>{{ form.last_name.label }}
+                    </label>
+                  </div>
+                  {% if form.last_name.errors %}
+                    <div class="field-errors">
+                      <i class="bi bi-exclamation-circle me-1"></i>
+                      {{ form.last_name.errors }}
+                    </div>
+                  {% endif %}
+                </div>
               </div>
             </div>
-            <div class="mb-3 row align-items-center">
-              <label class="col-5 col-form-label">{{ form.email.label }}</label>
-              <div class="col-7">
+
+            <!-- Campo Email -->
+            <div class="field-row">
+              <div class="form-floating">
                 {{ form.email }}
-                {{ form.email.errors }}
+                <label for="{{ form.email.id_for_label }}">
+                  <i class="bi bi-envelope me-2"></i>{{ form.email.label }}
+                </label>
+              </div>
+              {% if form.email.errors %}
+                <div class="field-errors">
+                  <i class="bi bi-exclamation-circle me-1"></i>
+                  {{ form.email.errors }}
+                </div>
+              {% endif %}
+            </div>
+
+            <!-- Campos de Contraseña en fila -->
+            <div class="row">
+              <div class="col-md-6">
+                <div class="field-row">
+                  <div class="form-floating">
+                    {{ form.password1 }}
+                    <label for="{{ form.password1.id_for_label }}">
+                      <i class="bi bi-lock me-2"></i>{{ form.password1.label }}
+                    </label>
+                  </div>
+                  {% if form.password1.errors %}
+                    <div class="field-errors">
+                      <i class="bi bi-exclamation-circle me-1"></i>
+                      {{ form.password1.errors }}
+                    </div>
+                  {% endif %}
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="field-row">
+                  <div class="form-floating">
+                    {{ form.password2 }}
+                    <label for="{{ form.password2.id_for_label }}">
+                      <i class="bi bi-lock-fill me-2"></i>{{ form.password2.label }}
+                    </label>
+                  </div>
+                  {% if form.password2.errors %}
+                    <div class="field-errors">
+                      <i class="bi bi-exclamation-circle me-1"></i>
+                      {{ form.password2.errors }}
+                    </div>
+                  {% endif %}
+                </div>
               </div>
             </div>
-            <div class="mb-3 row align-items-center">
-              <label class="col-5 col-form-label">{{ form.password1.label }}</label>
-              <div class="col-7">
-                {{ form.password1 }}
-                {{ form.password1.errors }}
-              </div>
-            </div>
-            <div class="mb-3 row align-items-center">
-              <label class="col-5 col-form-label">{{ form.password2.label }}</label>
-              <div class="col-7">
-                {{ form.password2 }}
-                {{ form.password2.errors }}
-              </div>
-            </div>
-            <div class="mb-3 row align-items-center">
-              <label class="col-5 col-form-label">{{ form.tipo_usuario.label }}</label>
-              <div class="col-7">
+
+            <!-- Campo Tipo de Usuario -->
+            <div class="field-row">
+              <div class="form-floating">
                 {{ form.tipo_usuario }}
-                {{ form.tipo_usuario.errors }}
+                <label for="{{ form.tipo_usuario.id_for_label }}">
+                  <i class="bi bi-people me-2"></i>{{ form.tipo_usuario.label }}
+                </label>
               </div>
+              {% if form.tipo_usuario.errors %}
+                <div class="field-errors">
+                  <i class="bi bi-exclamation-circle me-1"></i>
+                  {{ form.tipo_usuario.errors }}
+                </div>
+              {% endif %}
             </div>
-            <button type="submit" class="w-100 btn btn-primary mb-2">Registrarme</button>
-        </form>
-        {% if messages %}
-          {% for message in messages %}
-            <div class="alert alert-success mt-2 text-center">{{ message }}</div>
-          {% endfor %}
-        {% endif %}
-        <p class="text-center"><a href="{% url 'login' %}">Volver al login</a></p>
+
+            <!-- Mensajes de éxito -->
+            {% if messages %}
+              {% for message in messages %}
+                <div class="alert alert-success-custom mb-3" role="alert">
+                  <i class="bi bi-check-circle me-2"></i>
+                  {{ message }}
+                </div>
+              {% endfor %}
+            {% endif %}
+
+            <!-- Botón de registro -->
+            <button type="submit" class="w-100 btn btn-register btn-lg mb-3">
+              <i class="bi bi-person-plus me-2"></i>
+              Crear Mi Cuenta
+            </button>
+            
+            <!-- Link para volver al login -->
+            <div class="text-center">
+              <p class="text-muted mb-2">¿Ya tienes una cuenta?</p>
+              <a href="{% url 'login' %}" class="btn-login-link">
+                <i class="bi bi-box-arrow-in-right me-2"></i>
+                Volver al Login
+              </a>
+            </div>
+          </form>
+        </div>
+
+        <!-- Footer -->
+        <div class="text-center pb-4">
+          <p class="text-muted mb-0 small">
+            <i class="bi bi-c-circle me-1"></i>
+            2025 AutoTenis. Todos los derechos reservados.
+          </p>
+        </div>
       </div>
     </div>
-  </div>
-</div>
-{% endblock %}
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  </body>
+</html>

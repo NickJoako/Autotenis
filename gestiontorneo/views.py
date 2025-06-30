@@ -1,8 +1,17 @@
+"""
+Vistas principales del sistema de gestión de torneos de tenis.
+
+Este módulo contiene todas las vistas para la gestión de torneos, jugadores,
+partidos, resultados y sistema de autenticación personalizado.
+"""
+
 import random
 import pandas as pd
 from django.shortcuts import render, redirect
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.views.decorators.http import require_POST
+from django.contrib.auth import authenticate, login
 from .forms import *
 from django.db.models import Q
 from django.db import models
@@ -15,9 +24,47 @@ from datetime import datetime
 import math
 import unicodedata
 from django.http import HttpResponseRedirect, HttpResponse, JsonResponse, JsonResponse
-from .models import GrupoTorneo, ParticipanteGrupo, LlaveTorneo, JugadorBye
+from .models import GrupoTorneo, ParticipanteGrupo, LlaveTorneo, JugadorBye, UsuarioPersonalizado, ArbitroTorneo
+from django.db import transaction
+from .decorators import require_organizador, require_jugador, require_arbitro, require_user_type
 
-# Create your views here.
+
+def login_personalizado(request):
+    """
+    Vista personalizada para autenticación de usuarios.
+    
+    Permite autenticación basada en email y tipo de usuario específico,
+    soportando diferentes tipos: organizador, árbitro y jugador.
+    
+    Args:
+        request (HttpRequest): Objeto de petición HTTP
+        
+    Returns:
+        HttpResponse: Redirección a home si login exitoso, o template de login con errores
+    """
+    if request.method == 'POST':
+        email = request.POST.get('username')  # El campo se llama username pero contiene el email
+        password = request.POST.get('password')
+        tipo_usuario = request.POST.get('tipo_usuario')
+        
+        # Buscar usuario por email y tipo
+        try:
+            user = UsuarioPersonalizado.objects.get(email=email, tipo_usuario=tipo_usuario)
+            # Verificar la contraseña
+            if user.check_password(password) and user.activo:
+                # Especificar el backend para evitar el error
+                backend = 'django.contrib.auth.backends.ModelBackend'
+                login(request, user, backend=backend)
+                # Redirigir según tipo de usuario (ya tienes la lógica en home)
+                return redirect('home')
+            else:
+                messages.error(request, 'Credenciales incorrectas o usuario inactivo')
+        except UsuarioPersonalizado.DoesNotExist:
+            messages.error(request, 'No existe un usuario con ese email y tipo de usuario')
+        
+        return render(request, 'login.html', {'form': {'errors': True}})
+    
+    return render(request, 'login.html')
 
 def rut_valido(rut):
     return bool(re.match(r'^\d{7,8}-[\dkK]$', str(rut)))
@@ -96,7 +143,7 @@ def home(request):
         elif user.tipo_usuario == 'jugador':
             return render(request, 'home_jugador.html')
         elif user.tipo_usuario == 'arbitro':
-            return render(request, 'home_arbitro.html')
+            return redirect('arbitros:panel')
     return render(request, 'home.html')
 
 def registro(request):
@@ -111,7 +158,7 @@ def registro(request):
 
     return render(request, 'registro.html', {'form': form})
 
-@login_required
+@require_organizador
 def crear_torneo(request):
     if request.method == 'POST':
         form = TorneoForm(request.POST)
@@ -125,9 +172,10 @@ def crear_torneo(request):
         form = TorneoForm()
     return render(request, 'crear_torneo.html', {'form': form})
 
-@login_required
+@require_organizador
 def lista_torneos(request):
-    torneos = Torneo.objects.filter(organizador=request.user)
+    # Ordenar por ID descendente (más recientes primero, ya que el ID es incremental)
+    torneos = Torneo.objects.filter(organizador=request.user).order_by('-id')
     
     # Agregar información sobre si cada torneo tiene partidos creados
     for torneo in torneos:
@@ -139,33 +187,73 @@ def lista_torneos(request):
     
     return render(request, 'lista_torneos.html', {'torneos': torneos})
 
-@login_required
+@require_organizador
 def lista_clubes(request):
     clubes = Club.objects.all()
     return render(request, 'lista_clubes.html', {'clubes': clubes})
 
-@login_required
+@require_organizador
 def lista_categorias(request):
-    categorias = Categoria.objects.all()
+    categorias = Categoria.objects.all().order_by('edad_minima')
+    
     if request.method == 'POST':
         if 'agregar' in request.POST:
             form = CategoriaForm(request.POST)
             if form.is_valid():
-                form.save()
-                return redirect('lista_categorias')
+                try:
+                    categoria = form.save()
+                    messages.success(request, f"✅ Categoría '{categoria.nombre}' agregada correctamente.")
+                    return redirect('lista_categorias')
+                except Exception as e:
+                    messages.error(request, f"❌ Error al guardar la categoría: {str(e)}")
+            else:
+                # Mostrar errores del formulario
+                for field, errors in form.errors.items():
+                    for error in errors:
+                        if field == '__all__':
+                            messages.error(request, f"❌ {error}")
+                        else:
+                            field_name = form.fields[field].label or field
+                            messages.error(request, f"❌ {field_name}: {error}")
+        
         elif 'eliminar' in request.POST:
             categoria_id = request.POST.get('categoria_id')
-            Categoria.objects.filter(id=categoria_id).delete()
+            try:
+                categoria = Categoria.objects.get(id=categoria_id)
+                categoria_nombre = categoria.nombre
+                
+                # Verificar si la categoría está siendo usada por algún torneo
+                torneos_usando_categoria = Torneo.objects.filter(categoria=categoria).count()
+                
+                if torneos_usando_categoria > 0:
+                    messages.warning(request, f"⚠️ No se puede eliminar la categoría '{categoria_nombre}' porque está siendo usada en {torneos_usando_categoria} torneo(s).")
+                else:
+                    categoria.delete()
+                    messages.success(request, f"✅ Categoría '{categoria_nombre}' eliminada correctamente.")
+                    
+            except Categoria.DoesNotExist:
+                messages.error(request, "❌ La categoría seleccionada no existe.")
+            except Exception as e:
+                messages.error(request, f"❌ Error al eliminar la categoría: {str(e)}")
+            
             return redirect('lista_categorias')
     else:
         form = CategoriaForm()
-    return render(request, 'lista_categorias.html', {'categorias': categorias, 'form': form})
+    
+    context = {
+        'categorias': categorias, 
+        'form': form,
+        'total_categorias': categorias.count()
+    }
+    
+    return render(request, 'lista_categorias.html', context)
 
-@login_required
+@require_organizador
 def lista_jugadores(request):
-    query = request.GET.get('q', '')
+    query = request.GET.get('q', '').strip()
     if query:
-        jugadores = Jugador.objects.filter(rut__icontains=query)
+        rut_normalizado = normalizar_rut(query)
+        jugadores = Jugador.objects.filter(rut__icontains=rut_normalizado)
     else:
         jugadores = Jugador.objects.all()
     if request.method == 'POST':
@@ -179,7 +267,7 @@ def lista_jugadores(request):
         form = JugadorForm()
     return render(request, 'lista_jugadores.html', {'jugadores': jugadores, 'form': form, 'query': query})
 
-@login_required
+@require_organizador
 def importar_jugadores(request):
     if request.method == "POST" and request.FILES.get("archivo"):
         archivo = request.FILES["archivo"]
@@ -278,7 +366,7 @@ def importar_jugadores(request):
         return redirect('lista_jugadores')
     return render(request, 'importar_jugadores.html', {'form': ImportarJugadoresForm()})
 
-@login_required
+@require_organizador
 def anadir_correo_jugador(request, jugador_id):
     jugador = get_object_or_404(Jugador, id=jugador_id)
     if request.method == "POST":
@@ -294,17 +382,17 @@ def anadir_correo_jugador(request, jugador_id):
             return redirect(f"{reverse('lista_jugadores')}?q={jugador.rut}")
     return render(request, "anadir_correo.html", {"jugador": jugador})
 
-@login_required
+@require_organizador
 def gestionar_torneo(request, torneo_id):
     torneo = Torneo.objects.get(id=torneo_id, organizador=request.user)
     return render(request, 'gestionar_torneo.html', {'torneo': torneo})
 
-@login_required
+@require_organizador
 def gestionar_torneo_federado(request, torneo_id):
     torneo = get_object_or_404(Torneo, id=torneo_id, organizador=request.user)
     return render(request, 'gestionar_torneo_federado.html', {'torneo': torneo})
 
-@login_required
+@require_organizador
 def ingresar_participantes(request, torneo_id):
     torneo = get_object_or_404(Torneo, id=torneo_id, organizador=request.user)
     
@@ -385,7 +473,7 @@ def ingresar_participantes(request, torneo_id):
                     continue
                     
                 if not rut_valido(rut):
-                    errores.append(f"Fila {i+2}: RUT inválido ({rut})")
+                    errores.append(f"Fila {i+2:}: RUT inválido ({rut})")
                     continue
                     
                 if rut in ruts_en_archivo:
@@ -462,7 +550,7 @@ def ingresar_participantes(request, torneo_id):
         "form_importar": ImportarParticipantesForm(),
     })
 
-@login_required
+@require_organizador
 def listado_participantes(request, torneo_id):
     torneo = get_object_or_404(Torneo, id=torneo_id, organizador=request.user)
     participantes = [p.jugador for p in torneo.participaciones.select_related('jugador')]
@@ -480,7 +568,7 @@ def listado_participantes(request, torneo_id):
 
     return render(request, "listado_participantes.html", {"torneo": torneo, "participantes": participantes})
 
-@login_required
+@require_organizador
 def eliminar_participante(request, torneo_id, participante_rut):
     torneo = get_object_or_404(Torneo, id=torneo_id, organizador=request.user)
     
@@ -503,7 +591,7 @@ def eliminar_participante(request, torneo_id, participante_rut):
     
     return redirect('listado_participantes', torneo_id=torneo.id)
 
-@login_required
+@require_organizador
 def configurar_sets_llaves(request, torneo_id):
     """Vista para configurar la cantidad de sets antes de iniciar el torneo con llaves"""
     torneo = get_object_or_404(Torneo, id=torneo_id, organizador=request.user)
@@ -552,7 +640,7 @@ def configurar_sets_llaves(request, torneo_id):
     
     return render(request, 'configurar_sets_llaves.html', context)
 
-@login_required
+@require_organizador
 def modalidad_llaves(request, torneo_id):
     torneo = get_object_or_404(Torneo, id=torneo_id, organizador=request.user)
     
@@ -598,7 +686,7 @@ def modalidad_llaves(request, torneo_id):
     
     return render(request, 'modalidad_llaves.html', context)
 
-@login_required
+@require_organizador
 def modalidad_grupos(request, torneo_id):
     torneo = get_object_or_404(Torneo, id=torneo_id, organizador=request.user)
     
@@ -680,7 +768,7 @@ def modalidad_grupos(request, torneo_id):
     
     return render(request, 'modalidad_grupos.html', context)
 
-@login_required
+@require_organizador
 def organizar_grupos(request, torneo_id):
     torneo = get_object_or_404(Torneo, id=torneo_id, organizador=request.user)
       # Verificar que el torneo esté en modalidad grupos
@@ -969,7 +1057,7 @@ def organizar_grupos(request, torneo_id):
     
     return render(request, 'organizar_grupos.html', context)
 
-@login_required
+@require_organizador
 def definir_cabezas_serie(request, torneo_id):
     torneo = get_object_or_404(Torneo, id=torneo_id, organizador=request.user)
     
@@ -1004,6 +1092,9 @@ def definir_cabezas_serie(request, torneo_id):
     
     grupos_de_3, grupos_de_4 = calcular_distribucion_grupos(num_participantes)
     total_grupos = grupos_de_3 + grupos_de_4
+    
+    # Calcular el total de clasificados (típicamente 2 por grupo para fase de llaves)
+    clasificados_total = total_grupos * 2
     
     if request.method == 'POST':
         if 'asignar_con_cabezas' in request.POST:
@@ -1074,7 +1165,6 @@ def definir_cabezas_serie(request, torneo_id):
                     resto_participantes.append(participacion)
             
             # Mezclar el resto de participantes
-            import random
             random.shuffle(resto_participantes)
             
             # Crear grupos
@@ -1088,10 +1178,10 @@ def definir_cabezas_serie(request, torneo_id):
                 grupos_creados.append(grupo)
             
             # Asignar cabezas de serie de primera línea EN EL ORDEN CORRECTO
-            for i, cabeza in enumerate(cabezas_serie_ordenadas):
+            for i, cabeza_serie in enumerate(cabezas_serie_ordenadas):
                 ParticipanteGrupo.objects.create(
                     grupo=grupos_creados[i],
-                    jugador=cabeza.jugador,
+                    jugador=cabeza_serie.jugador,
                     posicion_grupo=1,
                     es_cabeza_serie=True
                 )
@@ -1106,7 +1196,7 @@ def definir_cabezas_serie(request, torneo_id):
                             grupo=grupos_creados[grupo_idx],
                             jugador=segunda.jugador,
                             posicion_grupo=2,
-                            es_cabeza_serie=True  # También marcar como cabeza de serie
+                            es_cabeza_serie=True
                         )
             
             # Ahora distribuir el resto de participantes usando serpenteo
@@ -1156,14 +1246,7 @@ def definir_cabezas_serie(request, torneo_id):
                     )
                     participante_idx += 1
             
-            num_cabezas = len(cabezas_serie_ordenadas)
-            num_segunda = len(segunda_linea_ordenadas)
-            mensaje = f"¡Grupos asignados con {num_cabezas} cabeza{'s' if num_cabezas != 1 else ''} de serie"
-            if num_segunda > 0:
-                mensaje += f" y {num_segunda} de segunda línea"
-            mensaje += "! Los grupos restantes se llenaron automáticamente."
-            
-            messages.success(request, mensaje)
+            messages.success(request, "Grupos organizados correctamente con cabezas de serie asignadas.")
             return redirect('organizar_grupos', torneo_id=torneo.id)
     
     context = {
@@ -1171,523 +1254,12 @@ def definir_cabezas_serie(request, torneo_id):
         'participantes': participantes,
         'num_participantes': num_participantes,
         'total_grupos': total_grupos,
+        'grupos_de_3': grupos_de_3,
+        'grupos_de_4': grupos_de_4,
+        'clasificados_total': clasificados_total,
     }
     
     return render(request, 'definir_cabezas_serie.html', context)
-
-@login_required
-def vista_previa_asignacion(request, torneo_id):
-    """
-    Vista que devuelve el proceso paso a paso de cómo se asignaron los grupos REALMENTE
-    """
-    torneo = get_object_or_404(Torneo, id=torneo_id, organizador=request.user)
-    
-    # Obtener grupos existentes ordenados correctamente
-    grupos_existentes = GrupoTorneo.objects.filter(torneo=torneo).prefetch_related('participantes__jugador').order_by('numero')
-    
-    if not grupos_existentes.exists():
-        return JsonResponse({'error': 'No hay grupos asignados para mostrar'}, status=400)
-    
-    # Obtener participantes originales en orden de inscripción
-    participantes_originales = list(torneo.participaciones.select_related('jugador').order_by('id'))
-    
-    # Función para convertir participante a dict
-    def participante_to_dict(p):
-        return {
-            'id': p.jugador.id,
-            'nombre': f"{p.jugador.nombre} {p.jugador.apellido}",
-            'categoria': p.jugador.calcular_categoria()
-        }
-    
-    pasos = []
-    
-    # Paso 1: Lista original de participantes
-    pasos.append({
-        'titulo': 'Lista Original de Participantes',
-        'descripcion': 'Participantes registrados en el torneo en orden de inscripción',
-        'tipo': 'lista_original',
-        'participantes': [participante_to_dict(p) for p in participantes_originales]
-    })
-    
-    # Verificar si hay cabezas de serie
-    tiene_cabezas_serie = grupos_existentes.filter(participantes__es_cabeza_serie=True).exists()
-    
-    if tiene_cabezas_serie:
-        # PROCESO CON CABEZAS DE SERIE - RECONSTRUIR EL PROCESO REAL
-        
-        # Obtener las cabezas de serie de primera línea (posición 1) en el orden correcto de los grupos
-        cabezas_serie_primera_linea = []
-        for grupo in grupos_existentes.order_by('numero'):
-            cabeza_primera = grupo.participantes.filter(es_cabeza_serie=True, posicion_grupo=1).first()
-            if cabeza_primera:
-                cabezas_serie_primera_linea.append({
-                    'id': cabeza_primera.jugador.id,
-                    'nombre': f"{cabeza_primera.jugador.nombre} {cabeza_primera.jugador.apellido}",
-                    'categoria': cabeza_primera.jugador.calcular_categoria(),
-                    'grupo': str(grupo.numero),  # 1, 2, 3, etc.
-                    'numero_grupo': grupo.numero - 1,
-                    'posicion': 1
-                })
-        
-        # Obtener las cabezas de serie de segunda línea (posición 2) en el orden correcto de los grupos
-        cabezas_serie_segunda_linea = []
-        for grupo in grupos_existentes.order_by('numero'):
-            cabeza_segunda = grupo.participantes.filter(es_cabeza_serie=True, posicion_grupo=2).first()
-            if cabeza_segunda:
-                cabezas_serie_segunda_linea.append({
-                    'id': cabeza_segunda.jugador.id,
-                    'nombre': f"{cabeza_segunda.jugador.nombre} {cabeza_segunda.jugador.apellido}",
-                    'categoria': cabeza_segunda.jugador.calcular_categoria(),
-                    'grupo': str(grupo.numero),  # 1, 2, 3, etc.
-                    'numero_grupo': grupo.numero - 1,
-                    'posicion': 2
-                })
-        
-        # Combinar todas las cabezas de serie para mostrar en el paso
-        todas_cabezas_serie = cabezas_serie_primera_linea + cabezas_serie_segunda_linea
-        
-        # Paso 2: Mostrar cabezas de serie seleccionadas
-        descripcion_cabezas = 'Jugadores seleccionados como cabezas de serie'
-        if cabezas_serie_primera_linea and cabezas_serie_segunda_linea:
-            descripcion_cabezas += f': {len(cabezas_serie_primera_linea)} de primera línea (posición 1) y {len(cabezas_serie_segunda_linea)} de segunda línea (posición 2)'
-        elif cabezas_serie_primera_linea:
-            descripcion_cabezas += f': {len(cabezas_serie_primera_linea)} de primera línea (posición 1)'
-        
-        pasos.append({
-            'titulo': 'Cabezas de Serie Seleccionadas',
-            'descripcion': descripcion_cabezas,
-            'tipo': 'cabezas_serie',
-            'cabezas': todas_cabezas_serie,
-            'primera_linea': cabezas_serie_primera_linea,
-            'segunda_linea': cabezas_serie_segunda_linea
-        })
-        
-        # Obtener todos los participantes que NO son cabezas de serie
-        cabezas_ids = [c['id'] for c in todas_cabezas_serie]
-        resto_participantes = [p for p in participantes_originales if p.jugador.id not in cabezas_ids]
-        
-        # RECONSTRUIR la lista shuffle que se usó realmente
-        # Necesitamos obtener el orden exacto en que fueron asignados
-        resto_orden_real = []
-        num_cabezas_primera_linea = len(cabezas_serie_primera_linea)
-        num_grupos = len(grupos_existentes)
-        
-        # Crear un conjunto de posiciones ocupadas por cabezas de serie
-        posiciones_ocupadas = set()
-        for cabeza in cabezas_serie_primera_linea:
-            posiciones_ocupadas.add((cabeza['numero_grupo'], 1))
-        for cabeza in cabezas_serie_segunda_linea:
-            posiciones_ocupadas.add((cabeza['numero_grupo'], 2))
-        
-        # Reconstruir el orden siguiendo el patrón de serpenteo pero excluyendo posiciones ocupadas
-        for posicion in range(1, 5):  # Posiciones 1, 2, 3, 4
-            grupos_disponibles = list(range(num_grupos))
-            
-            # Aplicar patrón serpenteo según la posición
-            if (posicion - 1) % 2 == 1:  # Posiciones 2, 4, 6... (reverso)
-                orden_grupos = list(reversed(grupos_disponibles))
-            else:  # Posiciones 1, 3, 5... (normal)
-                orden_grupos = grupos_disponibles
-            
-            # Obtener participantes en esta posición siguiendo el orden serpenteo
-            for grupo_idx in orden_grupos:
-                # Skip si esta posición está ocupada por cabezas de serie
-                if (grupo_idx, posicion) not in posiciones_ocupadas:
-                    grupo = grupos_existentes[grupo_idx]
-                    participante_en_posicion = grupo.participantes.filter(posicion_grupo=posicion, es_cabeza_serie=False).first()
-                    if participante_en_posicion:
-                        resto_orden_real.append(participante_en_posicion.jugador)
-        
-        # Paso 3: Lista randomizada (el orden real que se usó)
-        pasos.append({
-            'titulo': 'Participantes Restantes Aleatorizados',
-            'descripcion': 'Los participantes restantes (sin cabezas de serie) fueron mezclados aleatoriamente antes de la asignación',
-            'tipo': 'lista_randomizada',
-            'participantes': [
-                {
-                    'id': jugador.id,
-                    'nombre': f"{jugador.nombre} {jugador.apellido}",
-                    'categoria': jugador.calcular_categoria()
-                }
-                for jugador in resto_orden_real
-            ]
-        })
-        
-        # Paso 4: Asignación de cabezas de serie a sus grupos
-        grupos_simulados = [[] for _ in range(num_grupos)]
-        
-        # Primero asignar las cabezas de serie de primera línea a sus grupos correspondientes
-        for cabeza_info in cabezas_serie_primera_linea:
-            grupo_idx = cabeza_info['numero_grupo']
-            grupos_simulados[grupo_idx].append({
-                'id': cabeza_info['id'],
-                'nombre': cabeza_info['nombre'],
-                'categoria': cabeza_info['categoria'],
-                'es_cabeza_serie': True,
-                'posicion': 1
-            })
-        
-        # Luego asignar las cabezas de serie de segunda línea a sus grupos correspondientes
-        for cabeza_info in cabezas_serie_segunda_linea:
-            grupo_idx = cabeza_info['numero_grupo']
-            # Insertar en la segunda posición del grupo
-            grupos_simulados[grupo_idx].insert(1, {
-                'id': cabeza_info['id'],
-                'nombre': cabeza_info['nombre'],
-                'categoria': cabeza_info['categoria'],
-                'es_cabeza_serie': True,
-                'posicion': 2
-            })
-        
-        pasos.append({
-            'titulo': 'Asignación de Cabezas de Serie',
-            'descripcion': 'Las cabezas de serie fueron asignadas a sus grupos correspondientes (1→A, 2→B, 3→C, etc.)',
-            'tipo': 'asignacion_serpenteo',
-            'grupos': [grupo.copy() for grupo in grupos_simulados],
-            'jugador_actual': None,
-            'grupo_actual': None
-        })
-        
-        # Paso 5: Asignación serpenteo del resto usando la nueva lógica
-        if resto_orden_real:
-            lote_size = min(5, max(3, len(resto_orden_real) // 3))
-            
-            # Crear la secuencia de asignaciones que se usó realmente
-            asignaciones_reales = []
-            
-            # Usar el mismo método de posiciones ocupadas que arriba
-            posiciones_ocupadas_sim = set()
-            for cabeza in cabezas_serie_primera_linea:
-                posiciones_ocupadas_sim.add((cabeza['numero_grupo'], 1))
-            for cabeza in cabezas_serie_segunda_linea:
-                posiciones_ocupadas_sim.add((cabeza['numero_grupo'], 2))
-            
-            # Crear lista de asignaciones disponibles siguiendo serpenteo
-            for posicion in range(1, 5):  # Posiciones 1, 2, 3, 4
-                grupos_disponibles = list(range(num_grupos))
-                
-                # Aplicar patrón serpenteo según la posición
-                if (posicion - 1) % 2 == 1:  # Posiciones 2, 4, 6... (reverso)
-                    orden_grupos = list(reversed(grupos_disponibles))
-                else:  # Posiciones 1, 3, 5... (normal)
-                    orden_grupos = grupos_disponibles
-                
-                # Agregar asignaciones disponibles
-                for grupo_idx in orden_grupos:
-                    if (grupo_idx, posicion) not in posiciones_ocupadas_sim:
-                        asignaciones_reales.append((grupo_idx, posicion))
-            
-            # Simular la asignación usando el patrón secuencial correcto
-            participante_idx = 0
-            
-            for lote_inicio in range(0, len(resto_orden_real), lote_size):
-                lote_fin = min(lote_inicio + lote_size, len(resto_orden_real))
-                
-                for i in range(lote_inicio, lote_fin):
-                    if i < len(asignaciones_reales) and participante_idx < len(resto_orden_real):
-                        jugador = resto_orden_real[participante_idx]
-                        grupo_destino, posicion = asignaciones_reales[i]
-                        
-                        jugador_data = {
-                            'id': jugador.id,
-                            'nombre': f"{jugador.nombre} {jugador.apellido}",
-                            'categoria': jugador.calcular_categoria(),
-                            'es_cabeza_serie': False
-                        }
-                        grupos_simulados[grupo_destino].append(jugador_data)
-                        participante_idx += 1
-                
-                # Agregar paso de asignación agrupada
-                if lote_fin > 0 and (lote_fin - 1) < len(resto_orden_real):
-                    ultimo_jugador = resto_orden_real[lote_fin - 1]
-                    ultimo_i = lote_fin - 1
-                    if ultimo_i < len(asignaciones_reales):
-                        ultimo_grupo, ultimo_posicion = asignaciones_reales[ultimo_i]
-                    else:
-                        ultimo_grupo = 0
-                        ultimo_posicion = 2
-                    
-                    pasos.append({
-                        'titulo': f'Asignación Serpenteo - Jugadores {lote_inicio + 1}-{lote_fin}',
-                        'descripcion': f'Asignando jugadores {lote_inicio + 1} al {lote_fin} de {len(resto_orden_real)} usando el patrón serpenteo corregido',
-                        'tipo': 'asignacion_serpenteo',
-                        'grupos': [grupo.copy() for grupo in grupos_simulados],
-                        'jugador_actual': {
-                            'id': ultimo_jugador.id,
-                            'nombre': f"{ultimo_jugador.nombre} {ultimo_jugador.apellido}",
-                            'categoria': ultimo_jugador.calcular_categoria(),
-                            'es_cabeza_serie': False
-                        },
-                        'grupo_actual': ultimo_grupo
-                    })
-        
-    else:
-        # PROCESO AUTOMÁTICO SIN CABEZAS DE SERIE
-        # Reconstruir el orden real de los participantes basado en sus posiciones actuales
-        participantes_orden_real = []
-        max_participantes = max(grupo.participantes.count() for grupo in grupos_existentes)
-        num_grupos = len(grupos_existentes)
-        
-        # Crear la misma lista de posiciones serpenteo que se usó en la asignación real
-        posiciones_serpenteo_reales = []
-        
-        # Determinar cuántos grupos de 4 hay (aproximación basada en distribución)
-        total_participantes = sum(grupo.participantes.count() for grupo in grupos_existentes)
-        grupos_de_4_aprox = 0
-        grupos_de_3_aprox = 0
-        
-        if total_participantes % 3 == 0:
-            grupos_de_3_aprox = total_participantes // 3
-        elif total_participantes % 3 == 1:
-            if total_participantes >= 4:
-                grupos_de_4_aprox = 1
-                grupos_de_3_aprox = (total_participantes - 4) // 3
-        elif total_participantes % 3 == 2:
-            if total_participantes >= 8:
-                grupos_de_4_aprox = 2
-                grupos_de_3_aprox = (total_participantes - 8) // 3
-            else:
-                grupos_de_4_aprox = 0
-                grupos_de_3_aprox = total_participantes // 3
-        
-        posiciones_serpenteo = []  # Definir la lista aquí
-        
-        for posicion in range(1, 5):  # Posiciones 1, 2, 3, 4
-            # TODOS los grupos pueden tener hasta 4 participantes durante el serpenteo
-            # La regla del torneo (máximo 2 grupos de 4) se aplica naturalmente
-            grupos_disponibles = list(range(num_grupos))  # Todos los grupos están disponibles
-            
-            if grupos_disponibles:  # Solo si hay grupos con esta posición
-                # Aplicar patrón serpenteo según la posición
-                if (posicion - 1) % 2 == 1:  # Posiciones 2, 4, 6... (reverso)
-                    orden_grupos = list(reversed(grupos_disponibles))
-                else:  # Posiciones 1, 3, 5... (normal)
-                    orden_grupos = grupos_disponibles
-                
-                # Agregar todas las asignaciones de esta posición a la lista
-                for grupo_idx in orden_grupos:
-                    posiciones_serpenteo.append((grupo_idx, posicion))
-        
-        # Reconstruir el orden de los participantes siguiendo las posiciones serpenteo
-        for grupo_idx, posicion in posiciones_serpenteo:
-            grupo = grupos_existentes[grupo_idx]
-            participante_en_posicion = grupo.participantes.filter(posicion_grupo=posicion).first()
-            if participante_en_posicion:
-                participantes_orden_real.append(participante_en_posicion.jugador)
-        
-        pasos.append({
-            'titulo': 'Lista Aleatorizada (Shuffle)',
-            'descripcion': 'Todos los participantes fueron mezclados aleatoriamente para la asignación',
-            'tipo': 'lista_randomizada',
-            'participantes': [
-                {
-                    'id': jugador.id,
-                    'nombre': f"{jugador.nombre} {jugador.apellido}",
-                    'categoria': jugador.calcular_categoria()
-                }
-                for jugador in participantes_orden_real
-            ]
-        })
-        
-        # Simular asignación serpenteo para proceso automático
-        grupos_simulados = [[] for _ in range(num_grupos)]
-        
-        # Agregar pasos de asignación agrupada
-        if participantes_orden_real:
-            lote_size = min(5, max(3, len(participantes_orden_real) // 3))
-            
-            participante_idx = 0
-            for lote_inicio in range(0, len(participantes_orden_real), lote_size):
-                lote_fin = min(lote_inicio + lote_size, len(participantes_orden_real))
-                
-                for i in range(lote_inicio, lote_fin):
-                    if i < len(posiciones_serpenteo_reales) and participante_idx < len(participantes_orden_real):
-                        jugador = participantes_orden_real[participante_idx]
-                        grupo_destino, posicion = posiciones_serpenteo_reales[i]
-                        
-                        jugador_data = {
-                            'id': jugador.id,
-                            'nombre': f"{jugador.nombre} {jugador.apellido}",
-                            'categoria': jugador.calcular_categoria(),
-                            'es_cabeza_serie': False
-                        }
-                        grupos_simulados[grupo_destino].append(jugador_data)
-                        participante_idx += 1
-                
-                # Agregar paso de asignación agrupada
-                if lote_fin > 0 and (lote_fin - 1) < len(participantes_orden_real):
-                    ultimo_jugador = participantes_orden_real[lote_fin - 1]
-                    ultimo_i = lote_fin - 1
-                    if ultimo_i < len(posiciones_serpenteo_reales):
-                        ultimo_grupo, ultimo_posicion = posiciones_serpenteo_reales[ultimo_i]
-                    else:
-                        ultimo_grupo = 0
-                        ultimo_posicion = 1
-                    
-                    pasos.append({
-                        'titulo': f'Asignación Serpenteo - Jugadores {lote_inicio + 1}-{lote_fin}',
-                        'descripcion': f'Asignando jugadores {lote_inicio + 1} al {lote_fin} de {len(participantes_orden_real)} usando el patrón serpenteo secuencial',
-                        'tipo': 'asignacion_serpenteo',
-                        'grupos': [grupo.copy() for grupo in grupos_simulados],
-                        'jugador_actual': {
-                            'id': ultimo_jugador.id,
-                            'nombre': f"{ultimo_jugador.nombre} {ultimo_jugador.apellido}",
-                            'categoria': ultimo_jugador.calcular_categoria(),
-                            'es_cabeza_serie': False
-                        },
-                        'grupo_actual': ultimo_grupo
-                    })
-    
-    # Paso final: Grupos completados (usando los datos REALES)
-    grupos_finales = []
-    for grupo in grupos_existentes.order_by('numero'):
-        participantes_grupo = []
-        for participante_grupo in grupo.participantes.all().order_by('posicion_grupo'):
-            participantes_grupo.append({
-                'id': participante_grupo.jugador.id,
-                'nombre': f"{participante_grupo.jugador.nombre} {participante_grupo.jugador.apellido}",
-                'categoria': participante_grupo.jugador.calcular_categoria(),
-                'es_cabeza_serie': participante_grupo.es_cabeza_serie
-            })
-        grupos_finales.append(participantes_grupo)
-    
-    pasos.append({
-        'titulo': 'Asignación Completada',
-        'descripcion': 'Todos los participantes han sido asignados a sus grupos correspondientes',
-        'tipo': 'grupos_finales',
-        'grupos': grupos_finales
-    })
-    
-    return JsonResponse({'pasos': pasos})
-
-
-def calcular_grupo_serpenteo(posicion, num_grupos):
-    """
-    Calcula el grupo destino para una posición dada en el serpenteo
-    Posición 1: Grupo 0, Posición 2: Grupo 1, ..., luego serpentea
-    """
-    if posicion <= num_grupos:
-        return posicion - 1
-    
-    # Calcular en qué "ronda" estamos
-    ronda = (posicion - 1) // num_grupos
-    posicion_en_ronda = (posicion - 1) % num_grupos
-    
-    if ronda % 2 == 0:  # Rondas pares: izquierda a derecha
-        return posicion_en_ronda
-    else:  # Rondas impares: derecha a izquierda
-        return num_grupos - 1 - posicion_en_ronda
-
-
-def calcular_grupo_serpenteo_con_cabezas(posicion, num_grupos):
-    """
-    Calcula el grupo destino para una posición dada en el serpenteo CON cabezas de serie
-    PATRÓN CORRECTO:
-    - Ronda 1 (posición 1): A→B→C→D→E (cabezas de serie)
-    - Ronda 2 (posición 2): E→D→C→B→A (reverso)
-    - Ronda 3 (posición 3): A→B→C→D→E (normal)
-    - Ronda 4 (posición 4): E→D→C→B→A (reverso)
-    """
-    ronda = posicion  # La posición ES la ronda
-    
-    # Calcular la posición
-    # Para ronda 2: posiciones 6,7,8,9,10 → índices 0,1,2,3,4
-    # Para ronda 3: posiciones 11,12,13,14,15 → índices 0,1,2,3,4
-    
-    if (ronda - 1) % 2 == 1:  # Rondas 2, 4, 6... (reverso)
-        # E→D→C→B→A
-        return num_grupos - 1 - 0  # Siempre empezar desde el último grupo y retroceder
-    else:  # Rondas 1, 3, 5... (normal)
-        # A→B→C→D→E  
-        return 0  # Siempre empezar desde el primer grupo
-    
-    # Nota: Esta función necesita ser refactorizada porque no maneja correctamente
-    # el índice dentro de la ronda. Mejor usar la lógica directa en la vista previa.
-
-@login_required
-def vista_previa_asignacion_pagina(request, torneo_id):
-    """
-    Vista que muestra la página completa de vista previa de asignación
-    """
-    torneo = get_object_or_404(Torneo, id=torneo_id, organizador=request.user)
-    
-    # Verificar que el torneo esté en modalidad grupos
-    if torneo.modalidad != 'grupos' or not torneo.torneo_iniciado:
-        messages.error(request, "El torneo no está en modalidad de grupos o no ha sido iniciado.")
-        return redirect('gestionar_torneo', torneo_id=torneo.id)
-    
-    # Obtener grupos existentes
-    grupos_existentes = GrupoTorneo.objects.filter(torneo=torneo).prefetch_related('participantes__jugador').order_by('numero')
-    
-    if not grupos_existentes.exists():
-        messages.error(request, "No hay grupos asignados para mostrar la vista previa.")
-        return redirect('organizar_grupos', torneo_id=torneo.id)
-    
-    # Obtener participantes
-    participantes = list(torneo.participaciones.select_related('jugador').all())
-    
-    # Verificar si hay cabezas de serie
-    tiene_cabezas_serie = grupos_existentes.filter(participantes__es_cabeza_serie=True).exists()
-    
-    context = {
-        'torneo': torneo,
-        'grupos_existentes': grupos_existentes,
-        'participantes': participantes,
-        'tiene_cabezas_serie': tiene_cabezas_serie,
-        'num_participantes': len(participantes),
-        'total_grupos': grupos_existentes.count(),
-    }
-    
-    return render(request, 'vista_previa_asignacion.html', context)
-
-@login_required
-def organizar_llaves(request, torneo_id):
-    torneo = get_object_or_404(Torneo, id=torneo_id, organizador=request.user)
-    
-    # Verificar que el torneo esté en modalidad llaves
-    if torneo.modalidad != 'llaves' or not torneo.torneo_iniciado:
-        messages.error(request, "El torneo no está en modalidad de llaves o no ha sido iniciado.")
-        return redirect('gestionar_torneo', torneo_id=torneo.id)
-    
-    participantes = list(torneo.participaciones.select_related('jugador').all())
-    num_participantes = len(participantes)
-    
-    # Calcular la potencia de 2 más cercana (hacia arriba)
-    potencia_2_siguiente = 2 ** math.ceil(math.log2(max(num_participantes, 2)))
-    
-    # Calcular BYE necesarias
-    byes_necesarias = potencia_2_siguiente - num_participantes if num_participantes > 0 else 0
-    
-    torneo = get_object_or_404(Torneo, id=torneo_id, organizador=request.user)
-    
-    # Verificar que el torneo esté en modalidad grupos
-    if torneo.modalidad != 'grupos' or not torneo.torneo_iniciado:
-        messages.error(request, "El torneo no está en modalidad de grupos o no ha sido iniciado.")
-        return redirect('gestionar_torneo', torneo_id=torneo.id)
-    
-    # Obtener grupos existentes
-    grupos_existentes = GrupoTorneo.objects.filter(torneo=torneo).prefetch_related('participantes__jugador').order_by('numero')
-    
-    if not grupos_existentes.exists():
-        messages.error(request, "No hay grupos asignados para mostrar la vista previa.")
-        return redirect('organizar_grupos', torneo_id=torneo.id)
-    
-    # Obtener participantes
-    participantes = list(torneo.participaciones.select_related('jugador').all())
-    
-    # Verificar si hay cabezas de serie
-    tiene_cabezas_serie = grupos_existentes.filter(participantes__es_cabeza_serie=True).exists()
-    
-    context = {
-        'torneo': torneo,
-        'grupos_existentes': grupos_existentes,
-        'participantes': participantes,
-        'tiene_cabezas_serie': tiene_cabezas_serie,
-        'num_participantes': len(participantes),
-        'total_grupos': grupos_existentes.count(),
-    }
-    
-    return render(request, 'vista_previa_asignacion.html', context)
 
 @login_required
 def organizar_llaves(request, torneo_id):
@@ -1717,8 +1289,29 @@ def organizar_llaves(request, torneo_id):
     llaves_asignadas = torneo.llaves.filter(ronda=1).exists()
     llaves_primera_ronda = torneo.llaves.filter(ronda=1).select_related('jugador1', 'jugador2', 'bye1', 'bye2') if llaves_asignadas else []
     
-    # Manejar asignación de llaves
+    # Obtener árbitros del torneo
+    arbitros_torneo = UsuarioPersonalizado.objects.filter(
+        torneos_asignados__torneo=torneo,
+        torneos_asignados__activo=True
+    ).distinct()
+    
+    # CORREGIDO: Mostrar árbitros disponibles por defecto
+    # Solo excluir árbitros que están ACTIVOS en el torneo
+    arbitros_activos_en_torneo = ArbitroTorneo.objects.filter(
+        torneo=torneo,
+        activo=True
+    ).values_list('arbitro_id', flat=True)
+    
+    arbitros_disponibles = UsuarioPersonalizado.objects.filter(
+        tipo_usuario='arbitro',
+        activo=True
+    ).exclude(
+        id__in=arbitros_activos_en_torneo
+    ).distinct()
+    
+    # Manejar solicitudes POST
     if request.method == 'POST':
+        # Gestión de llaves
         if 'definir_llaves_manual' in request.POST:
             return redirect('definir_llaves', torneo_id=torneo.id)
         elif 'asignar_automatico' in request.POST:
@@ -1728,6 +1321,102 @@ def organizar_llaves(request, torneo_id):
             torneo.llaves.all().delete()
             torneo.byes.all().delete()
             messages.info(request, "Las llaves han sido eliminadas. Puedes asignar nuevamente.")
+            return redirect('organizar_llaves', torneo_id=torneo.id)
+        
+        # Gestión de árbitros
+        elif 'buscar_arbitros' in request.POST:
+            buscar_termino = request.POST.get('buscar_arbitro', '').strip()
+            if buscar_termino:
+                # CORREGIDO: Solo excluir árbitros ACTIVOS en el torneo
+                arbitros_activos_en_torneo = ArbitroTorneo.objects.filter(
+                    torneo=torneo,
+                    activo=True
+                ).values_list('arbitro_id', flat=True)
+                
+                # Buscar árbitros por email, nombre o apellido
+                arbitros_disponibles = UsuarioPersonalizado.objects.filter(
+                    tipo_usuario='arbitro',
+                    activo=True
+                ).filter(
+                    Q(email__icontains=buscar_termino) |
+                    Q(first_name__icontains=buscar_termino) |
+                    Q(last_name__icontains=buscar_termino)
+                ).exclude(
+                    id__in=arbitros_activos_en_torneo
+                ).distinct()
+                
+                if not arbitros_disponibles:
+                    messages.info(request, f"No se encontraron árbitros disponibles con '{buscar_termino}'.")
+            else:
+                messages.warning(request, "Por favor, ingresa un término de búsqueda.")
+        
+        elif 'mostrar_todos_arbitros' in request.POST:
+            # CORREGIDO: Solo excluir árbitros ACTIVOS en el torneo
+            arbitros_activos_en_torneo = ArbitroTorneo.objects.filter(
+                torneo=torneo,
+                activo=True
+            ).values_list('arbitro_id', flat=True)
+            
+            # Mostrar todos los árbitros disponibles (no asignados activamente al torneo)
+            arbitros_disponibles = UsuarioPersonalizado.objects.filter(
+                tipo_usuario='arbitro',
+                activo=True
+            ).exclude(
+                id__in=arbitros_activos_en_torneo
+            ).distinct()
+            
+            if not arbitros_disponibles:
+                messages.info(request, "No hay árbitros disponibles para asignar.")
+        
+        elif 'agregar_arbitro' in request.POST:
+            arbitro_id = request.POST.get('arbitro_id')
+            if arbitro_id:
+                try:
+                    arbitro = UsuarioPersonalizado.objects.get(
+                        id=arbitro_id,
+                        tipo_usuario='arbitro',
+                        activo=True
+                    )
+                    
+                    # CORREGIDO: Verificar si ya existe una relación (activa o inactiva)
+                    try:
+                        arbitro_torneo = ArbitroTorneo.objects.get(torneo=torneo, arbitro=arbitro)
+                        
+                        if arbitro_torneo.activo:
+                            # Ya está activo
+                            messages.warning(request, f"El árbitro {arbitro.first_name} {arbitro.last_name} ya está asignado a este torneo.")
+                        else:
+                            # Está inactivo, reactivarlo
+                            arbitro_torneo.activo = True
+                            arbitro_torneo.save()
+                            messages.success(request, f"Árbitro {arbitro.first_name} {arbitro.last_name} reasignado al torneo exitosamente.")
+                            
+                    except ArbitroTorneo.DoesNotExist:
+                        # No existe, crear nuevo
+                        ArbitroTorneo.objects.create(torneo=torneo, arbitro=arbitro)
+                        messages.success(request, f"Árbitro {arbitro.first_name} {arbitro.last_name} agregado al torneo exitosamente.")
+                        
+                except UsuarioPersonalizado.DoesNotExist:
+                    messages.error(request, "Árbitro no encontrado.")
+            
+            return redirect('organizar_llaves', torneo_id=torneo.id)
+        
+        elif 'remover_arbitro' in request.POST:
+            arbitro_id = request.POST.get('arbitro_id')
+            if arbitro_id:
+                try:
+                    arbitro_torneo = ArbitroTorneo.objects.get(
+                        torneo=torneo,
+                        arbitro_id=arbitro_id,
+                        activo=True
+                    )
+                    arbitro_torneo.activo = False
+                    arbitro_torneo.save()
+                    messages.success(request, f"Árbitro {arbitro_torneo.arbitro.first_name} {arbitro_torneo.arbitro.last_name} removido del torneo.")
+                    
+                except ArbitroTorneo.DoesNotExist:
+                    messages.error(request, "Asignación de árbitro no encontrada.")
+            
             return redirect('organizar_llaves', torneo_id=torneo.id)
     
     context = {
@@ -1740,18 +1429,19 @@ def organizar_llaves(request, torneo_id):
         'es_bracket_perfecto': es_bracket_perfecto,
         'llaves_asignadas': llaves_asignadas,
         'llaves_primera_ronda': llaves_primera_ronda,
+        'arbitros_torneo': arbitros_torneo,
+        'arbitros_disponibles': arbitros_disponibles,
     }
     
     return render(request, 'organizar_llaves.html', context)
 
-
-@login_required
+@require_organizador
 def definir_llaves(request, torneo_id):
     torneo = get_object_or_404(Torneo, id=torneo_id, organizador=request.user)
     
     # Verificar que el torneo esté en modalidad llaves
     if torneo.modalidad != 'llaves' or not torneo.torneo_iniciado:
-        messages.error(request, "El torneo no está en modalidad de llaves o no ha sido iniciado.")
+        messages.error(request, "El torneo no está en modalidad llaves o no ha sido iniciado.")
         return redirect('gestionar_torneo', torneo_id=torneo.id)
     
     # Obtener participantes
@@ -1900,10 +1590,10 @@ def definir_llaves(request, torneo_id):
                 
                 # Primero, asignar jugadores y BYEs de forma que se evite BYE vs BYE
                 for posicion_info in posiciones_vacias:
-                    enfrentamiento, pos_en_enfrentamiento = posicion_info
+                    enfrentamiento, pos_en_enfrentamiento = posicion_info;
                     
                     if elementos_index >= len(keys_mezcladas):
-                        break
+                        break;
                     
                     clave_elemento = keys_mezcladas[elementos_index]
                     tipo, elemento = elementos_automaticos[clave_elemento]
@@ -1912,7 +1602,7 @@ def definir_llaves(request, torneo_id):
                     if tipo == 'bye':
                         # Buscar si ya hay un BYE asignado en este enfrentamiento
                         asignacion_actual = asignaciones_manuales[enfrentamiento]
-                        otra_posicion = 1 if pos_en_enfrentamiento == 2 else 2
+                        otra_posicion = 1 if pos_en_enfrentamiento == 2 else 2;
                         
                         # Verificar asignaciones manuales
                         hay_bye_manual = (asignacion_actual['es_bye1'] if otra_posicion == 1 else asignacion_actual['es_bye2'])
@@ -2026,7 +1716,7 @@ def definir_llaves(request, torneo_id):
                                 )
                     
                     # Crear la llave (siempre crear, aunque esté vacía)
-                    LlaveTorneo.objects.create(
+                    llave = LlaveTorneo.objects.create(
                         torneo=torneo,
                         ronda=1,
                         posicion=posicion,
@@ -2035,8 +1725,13 @@ def definir_llaves(request, torneo_id):
                         bye1=bye1_obj,
                         bye2=bye2_obj
                     )
+                    
+                    print(f"✅ Llave {posicion} creada: {llave.jugador1_nombre} vs {llave.jugador2_nombre}")
             
-                messages.success(request, "Las llaves han sido definidas correctamente. Los espacios vacíos fueron completados automáticamente.")
+                # Crear todas las rondas siguientes (vacías) para completar el bracket
+                total_rondas = crear_bracket_completo(torneo, len(participantes))
+                
+                messages.success(request, f"Las llaves han sido definidas correctamente. Se crearon {total_rondas} rondas en total. Los espacios vacíos fueron completados automáticamente.")
                 return redirect('organizar_llaves', torneo_id=torneo.id)
             except Exception as e:
                 messages.error(request, f"Error al guardar las llaves: {str(e)}")
@@ -2055,6 +1750,436 @@ def definir_llaves(request, torneo_id):
     }
     
     return render(request, 'definir_llaves.html', context)
+
+@login_required
+def vista_previa_asignacion(request, torneo_id):
+    """
+    Vista que devuelve el proceso paso a paso de cómo se asignaron los grupos REALMENTE
+    """
+    torneo = get_object_or_404(Torneo, id=torneo_id, organizador=request.user)
+    
+    # Obtener grupos existentes ordenados correctamente
+    grupos_existentes = GrupoTorneo.objects.filter(torneo=torneo).prefetch_related('participantes__jugador').order_by('numero')
+    
+    if not grupos_existentes.exists():
+        # Si es una petición AJAX, devolver JSON con error
+        if (request.headers.get('X-Requested-With') == 'XMLHttpRequest' or 
+            'application/json' in request.headers.get('Accept', '') or
+            request.GET.get('format') == 'json' or
+            'json' in request.path.lower()):
+            return JsonResponse({'error': 'No hay grupos asignados para mostrar la vista previa.'}, status=404)
+        messages.error(request, "No hay grupos asignados para mostrar la vista previa.")
+        return redirect('organizar_grupos', torneo_id=torneo.id)
+    
+    # Obtener participantes originales en orden de inscripción
+    participantes_originales = list(torneo.participaciones.select_related('jugador').order_by('id'))
+    
+    # Verificar si hay cabezas de serie
+    tiene_cabezas_serie = grupos_existentes.filter(participantes__es_cabeza_serie=True).exists()
+    
+    # Si es una petición AJAX/JSON, devolver los datos en formato JSON
+    if (request.headers.get('X-Requested-With') == 'XMLHttpRequest' or 
+        'application/json' in request.headers.get('Accept', '') or
+        request.GET.get('format') == 'json' or
+        'json' in request.path.lower()):
+        
+        # Función para convertir participante a dict
+        def participante_to_dict(p):
+            return {
+                'id': p.jugador.id,
+                'nombre': f"{p.jugador.nombre} {p.jugador.apellido}",
+                'categoria': p.jugador.calcular_categoria()
+            }
+        
+        pasos = []
+        
+        # Paso 1: Lista original de participantes
+        pasos.append({
+            'titulo': 'Lista Original de Participantes',
+            'descripcion': 'Participantes registrados en el torneo en orden de inscripción',
+            'tipo': 'lista_original',
+            'participantes': [participante_to_dict(p) for p in participantes_originales]
+        })
+        
+        if tiene_cabezas_serie:
+            # PROCESO CON CABEZAS DE SERIE - RECONSTRUIR EL PROCESO REAL
+            
+            # Obtener las cabezas de serie de primera línea (posición 1) en el orden correcto de los grupos
+            cabezas_serie_primera_linea = []
+            for grupo in grupos_existentes.order_by('numero'):
+                cabeza_primera = grupo.participantes.filter(es_cabeza_serie=True, posicion_grupo=1).first()
+                if cabeza_primera:
+                    cabezas_serie_primera_linea.append({
+                        'id': cabeza_primera.jugador.id,
+                        'nombre': f"{cabeza_primera.jugador.nombre} {cabeza_primera.jugador.apellido}",
+                        'categoria': cabeza_primera.jugador.calcular_categoria(),
+                        'grupo': str(grupo.numero),  # 1, 2, 3, etc.
+                        'numero_grupo': grupo.numero - 1,
+                        'posicion': 1
+                    })
+            
+            # Obtener las cabezas de serie de segunda línea (posición 2) en el orden correcto de los grupos
+            cabezas_serie_segunda_linea = []
+            for grupo in grupos_existentes.order_by('numero'):
+                cabeza_segunda = grupo.participantes.filter(es_cabeza_serie=True, posicion_grupo=2).first()
+                if cabeza_segunda:
+                    cabezas_serie_segunda_linea.append({
+                        'id': cabeza_segunda.jugador.id,
+                        'nombre': f"{cabeza_segunda.jugador.nombre} {cabeza_segunda.jugador.apellido}",
+                        'categoria': cabeza_segunda.jugador.calcular_categoria(),
+                        'grupo': str(grupo.numero),  # 1, 2, 3, etc.
+                        'numero_grupo': grupo.numero - 1,
+                        'posicion': 2           
+                    })
+            
+            # Combinar todas las cabezas de serie para mostrar en el paso
+            todas_cabezas_serie = cabezas_serie_primera_linea + cabezas_serie_segunda_linea
+            
+            # Paso 2: Mostrar cabezas de serie seleccionadas
+            descripcion_cabezas = 'Jugadores seleccionados como cabezas de serie'
+            if cabezas_serie_primera_linea and cabezas_serie_segunda_linea:
+                descripcion_cabezas += f': {len(cabezas_serie_primera_linea)} de primera línea (posición 1) y {len(cabezas_serie_segunda_linea)} de segunda línea (posición 2)'
+            elif cabezas_serie_primera_linea:
+                descripcion_cabezas += f': {len(cabezas_serie_primera_linea)} de primera línea (posición 1)'
+            
+            pasos.append({
+                'titulo': 'Cabezas de Serie Seleccionadas',
+                'descripcion': descripcion_cabezas,
+                'tipo': 'cabezas_serie',
+                'cabezas': todas_cabezas_serie,
+                'primera_linea': cabezas_serie_primera_linea,
+                'segunda_linea': cabezas_serie_segunda_linea
+            })
+            
+            # Obtener todos los participantes que NO son cabezas de serie
+            cabezas_ids = [c['id'] for c in todas_cabezas_serie]
+            resto_participantes = [p for p in participantes_originales if p.jugador.id not in cabezas_ids]
+            
+            # RECONSTRUIR la lista shuffle que se usó realmente
+            # Necesitamos obtener el orden exacto en que fueron asignados
+            resto_orden_real = []
+            num_grupos = len(grupos_existentes)
+            
+            # Crear un conjunto de posiciones ocupadas por cabezas de serie
+            posiciones_ocupadas = set()
+            for cabeza in cabezas_serie_primera_linea:
+                posiciones_ocupadas.add((cabeza['numero_grupo'], 1))
+            for cabeza in cabezas_serie_segunda_linea:
+                posiciones_ocupadas.add((cabeza['numero_grupo'], 2))
+            
+            # Reconstruir el orden siguiendo el patrón de serpenteo pero excluyendo posiciones ocupadas
+            for posicion in range(1, 5):  # Posiciones 1, 2, 3, 4
+                grupos_disponibles = list(range(num_grupos))
+                
+                # Aplicar patrón serpenteo según la posición
+                if (posicion - 1) % 2 == 1:  # Posiciones 2, 4, 6... (reverso)
+                    orden_grupos = list(reversed(grupos_disponibles))
+                else:  # Posiciones 1, 3, 5... (normal)
+                    orden_grupos = grupos_disponibles
+                
+                # Obtener participantes en esta posición siguiendo el orden serpenteo
+                for grupo_idx in orden_grupos:
+                    # Skip si esta posición está ocupada por cabezas de serie
+                    if (grupo_idx, posicion) not in posiciones_ocupadas:
+                        grupo = grupos_existentes[grupo_idx]
+                        participante_en_posicion = grupo.participantes.filter(posicion_grupo=posicion, es_cabeza_serie=False).first()
+                        if participante_en_posicion:
+                            resto_orden_real.append(participante_en_posicion.jugador)
+            
+            # Paso 3: Lista randomizada (el orden real que se usó)
+            pasos.append({
+                'titulo': 'Participantes Restantes Aleatorizados',
+                'descripcion': 'Los participantes restantes (sin cabezas de serie) fueron mezclados aleatoriamente antes de la asignación',
+                'tipo': 'lista_randomizada',
+                'participantes': [
+                    {
+                        'id': jugador.id,
+                        'nombre': f"{jugador.nombre} {jugador.apellido}",
+                        'categoria': jugador.calcular_categoria()
+                    }
+                    for jugador in resto_orden_real
+                ]
+            })
+            
+            # Paso 4: Asignación de cabezas de serie a sus grupos
+            grupos_simulados = [[] for _ in range(num_grupos)]
+            
+            # Primero asignar las cabezas de serie de primera línea a sus grupos correspondientes
+            for cabeza_info in cabezas_serie_primera_linea:
+                grupo_idx = cabeza_info['numero_grupo']
+                grupos_simulados[grupo_idx].append({
+                    'id': cabeza_info['id'],
+                    'nombre': cabeza_info['nombre'],
+                    'categoria': cabeza_info['categoria'],
+                    'es_cabeza_serie': True,
+                    'posicion': 1
+                })
+            
+            # Luego asignar las cabezas de serie de segunda línea a sus grupos correspondientes
+            for cabeza_info in cabezas_serie_segunda_linea:
+                grupo_idx = cabeza_info['numero_grupo']
+                # Insertar en la segunda posición del grupo
+                grupos_simulados[grupo_idx].insert(1, {
+                    'id': cabeza_info['id'],
+                    'nombre': cabeza_info['nombre'],
+                    'categoria': cabeza_info['categoria'],
+                    'es_cabeza_serie': True,
+                    'posicion': 2
+                })
+            
+            pasos.append({
+                'titulo': 'Asignación de Cabezas de Serie',
+                'descripcion': 'Las cabezas de serie fueron asignadas a sus grupos correspondientes (1→A, 2→B, 3→C, etc.)',
+                'tipo': 'asignacion_serpenteo',
+                'grupos': [grupo.copy() for grupo in grupos_simulados],
+                'jugador_actual': None,
+                'grupo_actual': None
+            })
+            
+            # Paso 5: Asignación serpenteo del resto usando la nueva lógica
+            if resto_orden_real:
+                lote_size = min(5, max(3, len(resto_orden_real) // 3))
+                
+                # Crear la secuencia de asignaciones que se usó realmente
+                asignaciones_reales = []
+                
+                # Usar el mismo método de posiciones ocupadas que arriba
+                posiciones_ocupadas_sim = set()
+                for cabeza in cabezas_serie_primera_linea:
+                    posiciones_ocupadas_sim.add((cabeza['numero_grupo'], 1))
+                for cabeza in cabezas_serie_segunda_linea:
+                    posiciones_ocupadas_sim.add((cabeza['numero_grupo'], 2))
+                
+                # Crear lista de asignaciones disponibles siguiendo serpenteo
+                for posicion in range(1, 5):  # Posiciones 1, 2, 3, 4
+                    grupos_disponibles = list(range(num_grupos))
+                    
+                    # Aplicar patrón serpenteo según la posición
+                    if (posicion - 1) % 2 == 1:  # Posiciones 2, 4, 6... (reverso)
+                        orden_grupos = list(reversed(grupos_disponibles))
+                    else:  # Posiciones 1, 3, 5... (normal)
+                        orden_grupos = grupos_disponibles
+                    
+                    # Agregar asignaciones disponibles
+                    for grupo_idx in orden_grupos:
+                        if (grupo_idx, posicion) not in posiciones_ocupadas_sim:
+                            asignaciones_reales.append((grupo_idx, posicion))
+                
+                # Simular la asignación usando el patrón secuencial correcto
+                participante_idx = 0
+                
+                for lote_inicio in range(0, len(resto_orden_real), lote_size):
+                    lote_fin = min(lote_inicio + lote_size, len(resto_orden_real))
+                    
+                    for i in range(lote_inicio, lote_fin):
+                        if i < len(asignaciones_reales) and participante_idx < len(resto_orden_real):
+                            jugador = resto_orden_real[participante_idx]
+                            grupo_destino, posicion = asignaciones_reales[i]
+                            
+                            jugador_data = {
+                                'id': jugador.id,
+                                'nombre': f"{jugador.nombre} {jugador.apellido}",
+                                'categoria': jugador.calcular_categoria(),
+                                'es_cabeza_serie': False
+                            }
+                            grupos_simulados[grupo_destino].append(jugador_data)
+                            participante_idx += 1
+                    
+                    # Agregar paso de asignación agrupada
+                    if lote_fin > 0 and (lote_fin - 1) < len(resto_orden_real):
+                        ultimo_jugador = resto_orden_real[lote_fin - 1]
+                        ultimo_i = lote_fin - 1
+                        if ultimo_i < len(asignaciones_reales):
+                            ultimo_grupo, ultimo_posicion = asignaciones_reales[ultimo_i]
+                        else:
+                            ultimo_grupo = 0
+                            ultimo_posicion = 2
+                        
+                        pasos.append({
+                            'titulo': f'Asignación Serpenteo - Jugadores {lote_inicio + 1}-{lote_fin}',
+                            'descripcion': f'Asignando jugadores {lote_inicio + 1} al {lote_fin} de {len(resto_orden_real)} usando el patrón serpenteo corregido',
+                            'tipo': 'asignacion_serpenteo',
+                            'grupos': [grupo.copy() for grupo in grupos_simulados],
+                            'jugador_actual': {
+                                'id': ultimo_jugador.id,
+                                'nombre': f"{ultimo_jugador.nombre} {ultimo_jugador.apellido}",
+                                'categoria': ultimo_jugador.calcular_categoria(),
+                                'es_cabeza_serie': False
+                            },
+                            'grupo_actual': ultimo_grupo
+                        })
+        
+        else:
+            # PROCESO AUTOMÁTICO SIN CABEZAS DE SERIE
+            # Reconstruir el orden real de los participantes basado en sus posiciones actuales
+            participantes_orden_real = []
+            num_grupos = len(grupos_existentes)
+            
+            # Crear la misma lista de posiciones serpenteo que se usó en la asignación real
+            posiciones_serpenteo = []
+            
+            for posicion in range(1, 5):  # Posiciones 1, 2, 3, 4
+                # TODOS los grupos pueden tener hasta 4 participantes durante el serpenteo
+                # La regla del torneo (máximo 2 grupos de 4) se aplica naturalmente
+                grupos_disponibles = list(range(num_grupos))  # Todos los grupos están disponibles
+                
+                if grupos_disponibles:  # Solo si hay grupos con esta posición
+                    # Aplicar patrón serpenteo según la posición
+                    if (posicion - 1) % 2 == 1:  # Posiciones 2, 4, 6... (reverso)
+                        orden_grupos = list(reversed(grupos_disponibles))
+                    else:  # Posiciones 1, 3, 5... (normal)
+                        orden_grupos = grupos_disponibles
+                    
+                    # Agregar todas las asignaciones de esta posición a la lista
+                    for grupo_idx in orden_grupos:
+                        posiciones_serpenteo.append((grupo_idx, posicion))
+            
+            # Reconstruir el orden de los participantes siguiendo las posiciones serpenteo
+            for grupo_idx, posicion in posiciones_serpenteo:
+                grupo = grupos_existentes[grupo_idx]
+                participante_en_posicion = grupo.participantes.filter(posicion_grupo=posicion).first()
+                if participante_en_posicion:
+                    participantes_orden_real.append(participante_en_posicion.jugador)
+            
+            pasos.append({
+                'titulo': 'Lista Aleatorizada (Shuffle)',
+                'descripcion': 'Todos los participantes fueron mezclados aleatoriamente para la asignación',
+                'tipo': 'lista_randomizada',
+                'participantes': [
+                    {
+                        'id': jugador.id,
+                        'nombre': f"{jugador.nombre} {jugador.apellido}",
+                        'categoria': jugador.calcular_categoria()
+                    }
+                    for jugador in participantes_orden_real
+                ]
+            })
+            
+            # Simular asignación serpenteo para proceso automático
+            grupos_simulados = [[] for _ in range(num_grupos)]
+            
+            # Agregar pasos de asignación agrupada
+            if participantes_orden_real:
+                lote_size = min(5, max(3, len(participantes_orden_real) // 3))
+                
+                participante_idx = 0
+                for lote_inicio in range(0, len(participantes_orden_real), lote_size):
+                    lote_fin = min(lote_inicio + lote_size, len(participantes_orden_real))
+                    
+                    for i in range(lote_inicio, lote_fin):
+                        if i < len(posiciones_serpenteo) and participante_idx < len(participantes_orden_real):
+                            jugador = participantes_orden_real[participante_idx]
+                            grupo_destino, posicion = posiciones_serpenteo[i]
+                            
+                            jugador_data = {
+                                'id': jugador.id,
+                                'nombre': f"{jugador.nombre} {jugador.apellido}",
+                                'categoria': jugador.calcular_categoria(),
+                                'es_cabeza_serie': False
+                            }
+                            grupos_simulados[grupo_destino].append(jugador_data)
+                            participante_idx += 1
+                    
+                    # Agregar paso de asignación agrupada
+                    if lote_fin > 0 and (lote_fin - 1) < len(participantes_orden_real):
+                        ultimo_jugador = participantes_orden_real[lote_fin - 1]
+                        ultimo_i = lote_fin - 1
+                        if ultimo_i < len(posiciones_serpenteo):
+                            ultimo_grupo, ultimo_posicion = posiciones_serpenteo[ultimo_i]
+                        else:
+                            ultimo_grupo = 0
+                            ultimo_posicion = 1
+                        
+                        pasos.append({
+                            'titulo': f'Asignación Serpenteo - Jugadores {lote_inicio + 1}-{lote_fin}',
+                            'descripcion': f'Asignando jugadores {lote_inicio + 1} al {lote_fin} de {len(participantes_orden_real)} usando el patrón serpenteo secuencial',
+                            'tipo': 'asignacion_serpenteo',
+                            'grupos': [grupo.copy() for grupo in grupos_simulados],
+                            'jugador_actual': {
+                                'id': ultimo_jugador.id,
+                                'nombre': f"{ultimo_jugador.nombre} {ultimo_jugador.apellido}",
+                                'categoria': ultimo_jugador.calcular_categoria(),
+                                'es_cabeza_serie': False
+                            },
+                            'grupo_actual': ultimo_grupo
+                        })
+        
+        # Paso final: Grupos completados (usando los datos REALES)
+        grupos_finales = []
+        for grupo in grupos_existentes.order_by('numero'):
+            participantes_grupo = []
+            for participante_grupo in grupo.participantes.all().order_by('posicion_grupo'):
+                participantes_grupo.append({
+                    'id': participante_grupo.jugador.id,
+                    'nombre': f"{participante_grupo.jugador.nombre} {participante_grupo.jugador.apellido}",
+                    'categoria': participante_grupo.jugador.calcular_categoria(),
+                    'es_cabeza_serie': participante_grupo.es_cabeza_serie
+                })
+            grupos_finales.append(participantes_grupo)
+        
+        pasos.append({
+            'titulo': 'Asignación Completada',
+            'descripcion': 'Todos los participantes han sido asignados a sus grupos correspondientes',
+            'tipo': 'grupos_finales',
+            'grupos': grupos_finales
+        })
+        
+        return JsonResponse({'pasos': pasos})
+    
+    # Si es una petición normal, devolver HTML
+    context = {
+        'torneo': torneo,
+        'grupos_existentes': grupos_existentes,
+        'participantes': participantes_originales,
+        'tiene_cabezas_serie': tiene_cabezas_serie,
+        'num_participantes': len(participantes_originales),
+        'total_grupos': grupos_existentes.count(),
+    }
+    
+    return render(request, 'vista_previa_asignacion.html', context)
+
+@login_required
+def vista_previa_asignacion_pagina(request, torneo_id):
+    """Vista para la página de vista previa de asignación"""
+    return vista_previa_asignacion(request, torneo_id)
+
+def crear_bracket_completo(torneo, num_participantes):
+    """Crear todas las rondas del bracket con jugadores vacíos en las rondas superiores"""
+    import math
+    
+    # Calcular la potencia de 2 más cercana para obtener el tamaño real del bracket
+    potencia_2_siguiente = 2 ** math.ceil(math.log2(max(num_participantes, 2)))
+    
+    # Calcular número total de rondas necesarias basado en la potencia de 2
+    total_rondas = math.ceil(math.log2(potencia_2_siguiente))
+    
+    print(f"📊 Creando bracket completo:")
+    print(f"   - Participantes: {num_participantes}")
+    print(f"   - Tamaño bracket: {potencia_2_siguiente}")
+    print(f"   - Rondas totales: {total_rondas}")
+    
+    # Ya tenemos la ronda 1 creada, ahora crear las rondas 2, 3, etc.
+    for ronda in range(2, total_rondas + 1):
+        # Calcular cuántos enfrentamientos hay en esta ronda
+        # En cada ronda, el número de enfrentamientos se divide por 2
+        enfrentamientos_en_ronda = potencia_2_siguiente // (2 ** ronda)
+        
+        print(f"   - Ronda {ronda}: {enfrentamientos_en_ronda} enfrentamientos")
+        
+        # Crear las llaves vacías para esta ronda
+        for posicion in range(1, enfrentamientos_en_ronda + 1):
+            llave = LlaveTorneo.objects.create(
+                torneo=torneo,
+                ronda=ronda,
+                posicion=posicion,
+                jugador1=None,  # Se llenará cuando se definan los ganadores
+                jugador2=None,  # Se llenará cuando se definan los ganadores
+                bye1=None,
+                bye2=None
+            )
+            print(f"     ✅ Llave creada: Ronda {ronda}, Posición {posicion}")
+    
+    return total_rondas
 
 def asignar_llaves_automatico(request, torneo, participantes, potencia_2_siguiente, byes_necesarias):
     """
@@ -2160,12 +2285,52 @@ def asignar_llaves_automatico(request, torneo, participantes, potencia_2_siguien
                 estado_partido='pendiente'
             )
         
-        messages.success(request, f"¡Asignación automática completada! Se han creado {num_enfrentamientos} enfrentamientos con {byes_necesarias} BYEs distribuidos aleatoriamente (sin enfrentamientos BYE vs BYE).")
+        # Crear todas las rondas siguientes (vacías) para completar el bracket
+        total_rondas = crear_bracket_completo(torneo, len(participantes))
+        
+        messages.success(request, f"¡Asignación automática completada! Se han creado {num_enfrentamientos} enfrentamientos en la primera ronda y {total_rondas} rondas totales con {byes_necesarias} BYEs distribuidos aleatoriamente (sin enfrentamientos BYE vs BYE).")
         return redirect('organizar_llaves', torneo_id=torneo.id)
         
     except Exception as e:
         messages.error(request, f"Error en la asignación automática: {str(e)}")
         return redirect('organizar_llaves', torneo_id=torneo.id)
+
+def sincronizar_estados_automatico(torneo):
+    """
+    Sincroniza automáticamente estados de partidos SOLO cuando:
+    - Un partido está en 'pendiente' 
+    - Tiene ambos jugadores asignados
+    - NO es BYE
+    - NO está finalizado
+    - NO tiene ganador asignado
+    """
+    partidos_actualizados = 0
+    
+    # SOLO partidos pendientes que no estén finalizados y sin ganador
+    partidos_pendientes = Partido.objects.filter(
+        torneo=torneo,
+        estado_partido='pendiente',  # SOLO pendientes
+        finalizado=False,  # NO tocar los finalizados
+        ganador__isnull=True  # NO tocar los que ya tienen ganador
+    )
+    
+    for partido in partidos_pendientes:
+        # Si tiene ambos jugadores y no es BYE, cambiar a "en_curso"
+        if (partido.jugador1 and partido.jugador2 and 
+            not partido.bye1 and not partido.bye2):
+            
+            partido.estado_partido = 'en_curso'
+            partido.save()
+            partidos_actualizados += 1
+            
+            # Crear resultado si no existe
+            try:
+                partido.resultado_detallado
+            except:
+                from .models import Resultado
+                Resultado.objects.create(partido=partido)
+    
+    return partidos_actualizados
 
 @login_required
 def iniciar_partidos(request, torneo_id):
@@ -2193,6 +2358,12 @@ def iniciar_partidos(request, torneo_id):
         partido_existente = Partido.objects.filter(torneo=torneo, llave_torneo=llave).first()
         
         if not partido_existente:
+            # Determinar estado inicial del partido
+            if llave.jugador1 and llave.jugador2 and not llave.bye1 and not llave.bye2:
+                estado_inicial = 'en_curso'
+            else:
+                estado_inicial = 'pendiente'
+            
             # Crear el partido
             partido = Partido.objects.create(
                 torneo=torneo,
@@ -2201,12 +2372,12 @@ def iniciar_partidos(request, torneo_id):
                 jugador2=llave.jugador2,
                 bye1=llave.bye1,
                 bye2=llave.bye2,
-                estado_partido='en_curso',  # Cambiar directamente a "en curso"
+                estado_partido=estado_inicial,
                 organizador=request.user
             )
             partidos_creados += 1
             
-            # Crear el resultado automáticamente con valores por defecto
+            # Crear el resultado automáticamente with default values
             Resultado.objects.create(
                 partido=partido
                 # Los campos del resultado se inicializan automáticamente en 0
@@ -2219,13 +2390,18 @@ def iniciar_partidos(request, torneo_id):
                 if exito:
                     partidos_bye_procesados += 1
         else:
-            # Si ya existe, cambiar su estado a "en curso"
-            if partido_existente.estado_partido == 'pendiente':
+            # Si ya existe, actualizar estado si es necesario (solo si está pendiente y no finalizado)
+            if (partido_existente.jugador1 and partido_existente.jugador2 and 
+                not partido_existente.bye1 and not partido_existente.bye2 and
+                partido_existente.estado_partido == 'pendiente' and
+                not partido_existente.finalizado):
                 partido_existente.estado_partido = 'en_curso'
                 partido_existente.save()
             
             # Crear resultado si no existe
-            if not hasattr(partido_existente, 'resultado'):
+            try:
+                partido_existente.resultado_detallado
+            except Resultado.DoesNotExist:
                 Resultado.objects.create(
                     partido=partido_existente
                     # Los campos del resultado se inicializan automáticamente en 0
@@ -2245,23 +2421,194 @@ def iniciar_partidos(request, torneo_id):
         messages.success(request, mensaje_principal)
     elif partidos_bye_procesados > 0:
         messages.success(request, f"¡{partidos_bye_procesados} partidos con BYE fueron cerrados automáticamente!")
-    else:
-        messages.info(request, "Todos los partidos ya estaban creados. Estado actualizado a 'en curso'.")
     
-    # Obtener todos los partidos ordenados por posición de llave
+    # Obtener todos los partidos de todas las rondas
     partidos = Partido.objects.filter(
-        torneo=torneo, 
-        llave_torneo__ronda=1
-    ).select_related('jugador1', 'jugador2', 'bye1', 'bye2', 'llave_torneo').order_by('llave_torneo__posicion')
+        torneo=torneo
+    ).select_related('jugador1', 'jugador2', 'bye1', 'bye2', 'llave_torneo').order_by('llave_torneo__ronda', 'llave_torneo__posicion')
     
+    # Crear partidos para rondas siguientes si hay llaves con ganadores asignados
+    llaves_todas_rondas = torneo.llaves.all().order_by('ronda', 'posicion')
+    for llave in llaves_todas_rondas:
+        if llave.ronda > 1:  # Para rondas después de la primera
+            # Solo crear partido si hay al menos un jugador asignado
+            if llave.jugador1 or llave.jugador2:
+                partido_existente = Partido.objects.filter(torneo=torneo, llave_torneo=llave).first()
+                if not partido_existente:
+                    # Determinar estado del partido
+                    if llave.jugador1 and llave.jugador2:
+                        estado = 'en_curso'
+                    elif llave.jugador1 or llave.jugador2:
+                        estado = 'pendiente'  # Falta un jugador
+                    else:
+                        estado = 'pendiente'
+                    
+                    partido = Partido.objects.create(
+                        torneo=torneo,
+                        llave_torneo=llave,
+                        jugador1=llave.jugador1,
+                        jugador2=llave.jugador2,
+                        bye1=llave.bye1,
+                        bye2=llave.bye2,
+                        estado_partido=estado,
+                        organizador=request.user
+                    )
+                    
+                    # Crear resultado si ambos jugadores están asignados
+                    if llave.jugador1 and llave.jugador2:
+                        Resultado.objects.create(partido=partido)
+                        
+                        # Procesar BYE si aplica
+                        if partido.es_partido_bye():
+                            partido.procesar_partido_bye()
+                else:
+                    # Actualizar partido existente para asegurar sincronización
+                    actualizado = False
+                    if partido_existente.jugador1 != llave.jugador1:
+                        partido_existente.jugador1 = llave.jugador1
+                        actualizado = True
+                    if partido_existente.jugador2 != llave.jugador2:
+                        partido_existente.jugador2 = llave.jugador2
+                        actualizado = True
+                    if partido_existente.bye1 != llave.bye1:
+                        partido_existente.bye1 = llave.bye1
+                        actualizado = True
+                    if partido_existente.bye2 != llave.bye2:
+                        partido_existente.bye2 = llave.bye2
+                        actualizado = True
+                    
+                    if actualizado:
+                        # Actualizar estado según jugadores asignados - solo si está pendiente y no finalizado
+                        if (partido_existente.jugador1 and partido_existente.jugador2 and 
+                            not partido_existente.bye1 and not partido_existente.bye2 and
+                            partido_existente.estado_partido == 'pendiente' and 
+                            not partido_existente.finalizado):
+                            partido_existente.estado_partido = 'en_curso'
+                        partido_existente.save()
+                        
+                        # Crear resultado si no existe y ambos jugadores están asignados
+                        if partido_existente.jugador1 and partido_existente.jugador2:
+                            try:
+                                partido_existente.resultado_detallado
+                            except Resultado.DoesNotExist:
+                                Resultado.objects.create(partido=partido_existente)
+    
+    # Refrescar la consulta de partidos después de crear nuevos
+    partidos = Partido.objects.filter(
+        torneo=torneo
+    ).select_related('jugador1', 'jugador2', 'bye1', 'bye2', 'llave_torneo').order_by('llave_torneo__ronda', 'llave_torneo__posicion')
+    
+    # Agrupar partidos por ronda
+    partidos_por_ronda = {}
+    partidos_tercer_lugar = []
+    
+    for partido in partidos:
+        ronda = partido.llave_torneo.ronda
+        # Separar partidos de tercer lugar
+        if partido.llave_torneo.tipo_llave == 'tercer_lugar':
+            partidos_tercer_lugar.append(partido)
+        else:
+            if ronda not in partidos_por_ronda:
+                partidos_por_ronda[ronda] = []
+            partidos_por_ronda[ronda].append(partido)
+
+    # Calcular el total de rondas teóricas basado en el número de participantes
+    # Para una llave de 8 participantes: 3 rondas (4->2->1)
+    import math
+    total_participantes = torneo.llaves.filter(ronda=1).count() * 2  # Cada llave de primera ronda tiene 2 participantes
+    if total_participantes > 0:
+        total_rondas = int(math.log2(total_participantes))
+    else:
+        total_rondas = torneo.llaves.aggregate(max_ronda=models.Max('ronda'))['max_ronda'] or 1
+
+    # Asegurarse de que todas las rondas estén representadas, aunque estén vacías
+    for r in range(1, total_rondas + 1):
+        if r not in partidos_por_ronda:
+            partidos_por_ronda[r] = []
+
+    # Verificar si se puede crear la siguiente ronda
+    ronda_actual = 1
+    if partidos_por_ronda:
+        # Encontrar la ronda más alta que tiene partidos
+        rondas_con_partidos = [r for r in partidos_por_ronda.keys() if partidos_por_ronda[r]]
+        if rondas_con_partidos:
+            ronda_actual = max(rondas_con_partidos)
+    
+    puede_crear_siguiente = False
+    if ronda_actual in partidos_por_ronda:
+        puede_crear_siguiente = all(p.ganador for p in partidos_por_ronda[ronda_actual])
+
+    # Obtener árbitros disponibles para este torneo
+    arbitros_disponibles = ArbitroTorneo.objects.filter(
+        torneo=torneo, 
+        activo=True
+    ).select_related('arbitro')
+
+    # 🔄 SINCRONIZACIÓN AUTOMÁTICA DE ESTADOS
+    # Aplicar sincronización final de estados después de todas las operaciones
+    try:
+        partidos_sincronizados = sincronizar_estados_automatico(torneo)
+        if partidos_sincronizados > 0:
+            messages.success(request, f"✅ {partidos_sincronizados} partidos sincronizados automáticamente a estado 'en_curso'.")
+    except Exception as e:
+        messages.warning(request, f"⚠️ Error en sincronización automática: {str(e)}")
+
+    torneo_completado = verificar_torneo_completado(torneo)
+
+    # Actualizar automáticamente el estado finalizado del torneo
+    if torneo_completado and not torneo.finalizado:
+        torneo.finalizado = True
+        torneo.save()
+        print(f"🏆 Torneo '{torneo.nombre}' marcado como FINALIZADO automáticamente")
+    elif not torneo_completado and torneo.finalizado:
+        # Si por alguna razón el torneo no está completado pero está marcado como finalizado, corregir
+        torneo.finalizado = False
+        torneo.save()
+        print(f"⚠️ Torneo '{torneo.nombre}' desmarcado como finalizado (corrección automática)")
+
+    # Siempre generar clasificación (parcial o completa)
+    clasificacion_final = generar_clasificacion_final(torneo)
+
     context = {
         'torneo': torneo,
-        'partidos': partidos,
+        'partidos_por_ronda': partidos_por_ronda,
+        'partidos_tercer_lugar': partidos_tercer_lugar,
+        'puede_crear_siguiente': puede_crear_siguiente,
+        'ronda_actual': ronda_actual,
+        'total_rondas': total_rondas,
+        'arbitros_disponibles': arbitros_disponibles,
+        'es_organizador': request.user == torneo.organizador,
+        # Información de depuración
+        'debug_partidos_count': partidos.count(),
+        'debug_llaves_count': torneo.llaves.count(),
+        'torneo_completado': torneo_completado,
+        'clasificacion_final': clasificacion_final,
     }
     
     return render(request, 'enfrentamientos.html', context)
 
-@login_required
+@require_organizador
+def cerrar_partido_organizador(request, torneo_id, partido_id):
+    """Vista para que el organizador cierre un partido manualmente"""
+    torneo = get_object_or_404(Torneo, id=torneo_id, organizador=request.user)
+    partido = get_object_or_404(Partido, id=partido_id, torneo=torneo)
+    
+    if partido.estado_partido == 'jugado':
+        messages.info(request, "El partido ya está cerrado.")
+        return redirect('iniciar_partidos', torneo_id=torneo.id)
+    
+    # Verificar y cerrar el partido
+    cerrado, mensaje = partido.verificar_y_cerrar_partido()
+    
+    if cerrado:
+        messages.success(request, f"¡Partido cerrado exitosamente! {mensaje}")
+    else:
+        messages.error(request, f"No se pudo cerrar el partido: {mensaje}")
+    
+    return redirect('iniciar_partidos', torneo_id=torneo.id)
+
+@require_organizador
+
 def procesar_partidos_bye_masivo(request, torneo_id):
     """Vista auxiliar para procesar automáticamente todos los partidos con BYE de un torneo"""
     torneo = get_object_or_404(Torneo, id=torneo_id, organizador=request.user)
@@ -2309,17 +2656,21 @@ def registrar_resultado(request, torneo_id, partido_id):
         messages.error(request, "Solo se pueden registrar resultados de partidos en curso.")
         return redirect('iniciar_partidos', torneo_id=torneo.id)
     
-    # Obtener el resultado (debería existir porque se creó al iniciar partidos)
+    # Obtener el resultado del partido
     try:
-        resultado = partido.resultado
+        resultado = partido.resultado_detallado
     except Resultado.DoesNotExist:
         # Si no existe, crearlo
         resultado = Resultado.objects.create(partido=partido)
     
     if request.method == 'POST':
         try:
-            # Obtener los puntos de cada set
-            mejor_de_sets = torneo.mejor_de_sets
+            # Determinar si es un partido final
+            total_rondas = torneo.llaves.aggregate(max_ronda=models.Max('ronda'))['max_ronda'] or 1
+            es_partido_final = partido.llave_torneo.ronda == total_rondas
+            
+            # Obtener los puntos de cada set usando la modalidad correcta
+            mejor_de_sets = torneo.mejor_de_sets_final if es_partido_final else torneo.mejor_de_sets
             sets_para_ganar = (mejor_de_sets // 2) + 1
             
             # Verificar qué sets ya están guardados antes de procesar
@@ -2431,54 +2782,125 @@ def registrar_resultado(request, torneo_id, partido_id):
             set4_j2_val = None
             set5_j1_val = None
             set5_j2_val = None
+            set6_j1_val = None
+            set6_j2_val = None
+            set7_j1_val = None
+            set7_j2_val = None
+            set8_j1_val = None
+            set8_j2_val = None
+            set9_j1_val = None
+            set9_j2_val = None
             
-            # Si es al mejor de 5, validar sets adicionales
-            if mejor_de_sets == 5:
-                set4_j1 = request.POST.get('set4_jugador1')
-                set4_j2 = request.POST.get('set4_jugador2')
-                set5_j1 = request.POST.get('set5_jugador1')
-                set5_j2 = request.POST.get('set5_jugador2')
+            # Validar sets adicionales dinámicamente según mejor_de_sets
+            for set_num in range(4, mejor_de_sets + 1):
+                set_j1 = request.POST.get(f'set{set_num}_jugador1')
+                set_j2 = request.POST.get(f'set{set_num}_jugador2')
                 
-                # Validar Set 4 si se ingresaron valores y no está guardado
-                if set4_j1 and set4_j2 and not sets_guardados['set4']:
-                    set4_j1_val = int(set4_j1)
-                    set4_j2_val = int(set4_j2)
-                    error_set4 = validar_set(set4_j1_val, set4_j2_val, "Set 4")
-                    if error_set4:
-                        errores.append(error_set4)
-                        errores.append(error_set4)
-                elif sets_guardados['set4']:
-                    # Set 4 ya está guardado, mantener valores actuales
-                    set4_j1_val = resultado.set4_jugador1
-                    set4_j2_val = resultado.set4_jugador2
-                
-                # Validar Set 5 si se ingresaron valores y no está guardado
-                if set5_j1 and set5_j2 and not sets_guardados['set5']:
-                    set5_j1_val = int(set5_j1)
-                    set5_j2_val = int(set5_j2)
-                    error_set5 = validar_set(set5_j1_val, set5_j2_val, "Set 5")
-                    if error_set5:
-                        errores.append(error_set5)
-                elif sets_guardados['set5']:
-                    # Set 5 ya está guardado, mantener valores actuales
-                    set5_j1_val = resultado.set5_jugador1
-                    set5_j2_val = resultado.set5_jugador2
+                # Validar si se ingresaron valores y no está guardado
+                if set_j1 and set_j2 and not sets_guardados[f'set{set_num}']:
+                    try:
+                        set_j1_val = int(set_j1)
+                        set_j2_val = int(set_j2)
+                        error_set = validar_set(set_j1_val, set_j2_val, f"Set {set_num}")
+                        if error_set:
+                            errores.append(error_set)
+                        else:
+                            # Asignar los valores a las variables correspondientes
+                            if set_num == 4:
+                                set4_j1_val, set4_j2_val = set_j1_val, set_j2_val
+                            elif set_num == 5:
+                                set5_j1_val, set5_j2_val = set_j1_val, set_j2_val
+                            elif set_num == 6:
+                                set6_j1_val, set6_j2_val = set_j1_val, set_j2_val
+                            elif set_num == 7:
+                                set7_j1_val, set7_j2_val = set_j1_val, set_j2_val
+                            elif set_num == 8:
+                                set8_j1_val, set8_j2_val = set_j1_val, set_j2_val
+                            elif set_num == 9:
+                                set9_j1_val, set9_j2_val = set_j1_val, set_j2_val
+                    except ValueError:
+                        errores.append(f"Error: Los valores del Set {set_num} deben ser números válidos.")
+                elif sets_guardados[f'set{set_num}']:
+                    # Set ya está guardado, mantener valores actuales
+                    if set_num == 4:
+                        set4_j1_val = resultado.set4_jugador1
+                        set4_j2_val = resultado.set4_jugador2
+                    elif set_num == 5:
+                        set5_j1_val = resultado.set5_jugador1
+                        set5_j2_val = resultado.set5_jugador2
+                    elif set_num == 6:
+                        set6_j1_val = getattr(resultado, 'set6_jugador1', None)
+                        set6_j2_val = getattr(resultado, 'set6_jugador2', None)
+                    elif set_num == 7:
+                        set7_j1_val = getattr(resultado, 'set7_jugador1', None)
+                        set7_j2_val = getattr(resultado, 'set7_jugador2', None)
+                    elif set_num == 8:
+                        set8_j1_val = getattr(resultado, 'set8_jugador1', None)
+                        set8_j2_val = getattr(resultado, 'set8_jugador2', None)
+                    elif set_num == 9:
+                        set9_j1_val = getattr(resultado, 'set9_jugador1', None)
+                        set9_j2_val = getattr(resultado, 'set9_jugador2', None)
             
             # Si hay errores, mostrarlos y no guardar
             if errores:
                 for error in errores:
                     messages.error(request, error)
                 # Mantener en la misma página para mostrar los errores
+                sets = list(range(1, mejor_de_sets + 1))
+                sets_values = {}
+                for set_num in sets:
+                    sets_values[f"set{set_num}_jugador1"] = getattr(resultado, f"set{set_num}_jugador1", "")
+                    sets_values[f"set{set_num}_jugador2"] = getattr(resultado, f"set{set_num}_jugador2", "")
                 context = {
                     'torneo': torneo,
                     'partido': partido,
                     'resultado': resultado,
-                    'mejor_de_sets': torneo.mejor_de_sets,
-                    'sets_para_ganar': (torneo.mejor_de_sets // 2) + 1,
+                    'mejor_de_sets': mejor_de_sets,
+                    'sets_para_ganar': sets_para_ganar,
                     'sets_guardados': resultado.obtener_sets_guardados(),
+                    'sets': sets,
+                    'sets_values': sets_values,
+                    'es_partido_final': es_partido_final,  # Indica si es un partido final
                 }
                 return render(request, 'registrar_resultado.html', context)
-            
+
+            # Validación extra: impedir guardar si hay empate en sets y ambos están a un set de ganar (ej: 2-2 en mejor de 5)
+            # Primero, calcular los sets ganados con los valores actuales (sin guardar aún)
+            sets_j1 = 0
+            sets_j2 = 0
+            sets_totales = []
+            # Recolectar los sets jugados
+            for set_num in range(1, mejor_de_sets + 1):
+                j1 = locals().get(f'set{set_num}_j1', None)
+                j2 = locals().get(f'set{set_num}_j2', None)
+                if j1 is not None and j2 is not None and (j1 > 0 or j2 > 0) and j1 != j2:
+                    if j1 > j2:
+                        sets_j1 += 1
+                    else:
+                        sets_j2 += 1
+                    sets_totales.append((j1, j2))
+
+            # Si ambos tienen sets_para_ganar - 1 y están empatados, bloquear guardado
+            if sets_j1 == sets_j2 and sets_j1 == sets_para_ganar - 1:
+                messages.error(request, f"No puedes guardar el resultado con empate {sets_j1}-{sets_j2}. Debe haber un ganador (por ejemplo, 3-2 en mejor de 5). Ingresa el set definitivo.")
+                sets = list(range(1, mejor_de_sets + 1))
+                sets_values = {}
+                for set_num in sets:
+                    sets_values[f"set{set_num}_jugador1"] = locals().get(f'set{set_num}_j1', getattr(resultado, f"set{set_num}_jugador1", ""))
+                    sets_values[f"set{set_num}_jugador2"] = locals().get(f'set{set_num}_j2', getattr(resultado, f"set{set_num}_jugador2", ""))
+                context = {
+                    'torneo': torneo,
+                    'partido': partido,
+                    'resultado': resultado,
+                    'mejor_de_sets': mejor_de_sets,
+                    'sets_para_ganar': sets_para_ganar,
+                    'sets_guardados': resultado.obtener_sets_guardados(),
+                    'sets': sets,
+                    'sets_values': sets_values,
+                    'es_partido_final': es_partido_final,  # Indica si es un partido final
+                }
+                return render(request, 'registrar_resultado.html', context)
+
             # Si todas las validaciones pasaron, actualizar el resultado
             resultado.set1_jugador1 = set1_j1
             resultado.set1_jugador2 = set1_j2
@@ -2486,24 +2908,48 @@ def registrar_resultado(request, torneo_id, partido_id):
             resultado.set2_jugador2 = set2_j2
             resultado.set3_jugador1 = set3_j1
             resultado.set3_jugador2 = set3_j2
-            
-            # Actualizar sets opcionales si se ingresaron y no están guardados
-            if set4_j1_val is not None and set4_j2_val is not None:
-                resultado.set4_jugador1 = set4_j1_val
-                resultado.set4_jugador2 = set4_j2_val
-            
-            if set5_j1_val is not None and set5_j2_val is not None:
-                resultado.set5_jugador1 = set5_j1_val
-                resultado.set5_jugador2 = set5_j2_val
-            
+
+            # Actualizar sets opcionales dinámicamente
+            for set_num in range(4, mejor_de_sets + 1):
+                j1_val = locals().get(f'set{set_num}_j1_val')
+                j2_val = locals().get(f'set{set_num}_j2_val')
+
+                if j1_val is not None and j2_val is not None:
+                    setattr(resultado, f'set{set_num}_jugador1', j1_val)
+                    setattr(resultado, f'set{set_num}_jugador2', j2_val)
+
             # Guardar y calcular sets ganados automáticamente
             resultado.save()
-            
+
             # Verificar inmediatamente si el partido debe cerrarse
             cerrado, mensaje = partido.verificar_y_cerrar_partido()
-            
+
             if cerrado:
-                messages.success(request, f"¡{mensaje}!")
+                # Auto-confirmar el partido inmediatamente si está marcado como pendiente
+                if partido.pendiente_confirmacion:
+                    cerrado_final, mensaje_final = partido.confirmar_y_cerrar_partido()
+                    if cerrado_final:
+                        messages.success(request, f"¡Partido cerrado exitosamente! {mensaje_final}")
+                    else:
+                        messages.success(request, f"¡{mensaje}!")
+                else:
+                    messages.success(request, f"¡{mensaje}!")
+
+                # **AGREGADO**: Sincronizar inmediatamente ganador entre partido y llave
+                sincronizar_ganador_partido_llave(partido)
+
+                # Si el torneo es de llaves, intentar avanzar ganadores automáticamente
+                if torneo.modalidad == 'llaves':
+                    avanzado, mensaje_avance = avanzar_ganadores_automaticamente(torneo)
+                    if avanzado:
+                        messages.info(request, mensaje_avance)
+                
+                # Verificar si el torneo está completado y marcarlo como finalizado
+                if verificar_torneo_completado(torneo) and not torneo.finalizado:
+                    torneo.finalizado = True
+                    torneo.save()
+                    messages.success(request, "🏆 ¡TORNEO FINALIZADO! Todos los partidos principales han sido completados.")
+
                 return redirect('iniciar_partidos', torneo_id=torneo.id)
             else:
                 # Resultado parcial guardado correctamente
@@ -2519,44 +2965,81 @@ def registrar_resultado(request, torneo_id, partido_id):
                     sets_nuevos.append("Set 4")
                 if sets_guardados_actuales['set5'] and not sets_guardados.get('set5', False):
                     sets_nuevos.append("Set 5")
-                
+
                 if sets_nuevos:
                     mensaje = f"Resultado guardado correctamente. Nuevos sets guardados: {', '.join(sets_nuevos)}. Sets actuales: {resultado.sets_ganados_jugador1}-{resultado.sets_ganados_jugador2}"
                 else:
                     mensaje = f"Resultado actualizado correctamente. Sets: {resultado.sets_ganados_jugador1}-{resultado.sets_ganados_jugador2}"
-                
+
                 messages.success(request, mensaje)
                 return redirect('registrar_resultado', torneo_id=torneo.id, partido_id=partido.id)
         
         except ValueError:
             messages.error(request, "Por favor ingresa números válidos para los puntos.")
             # Mantener en la misma página para mostrar el error
+            # Determinar modalidad correcta para mostrar el error
+            total_rondas = torneo.llaves.aggregate(max_ronda=models.Max('ronda'))['max_ronda'] or 1
+            es_partido_final = partido.llave_torneo.ronda == total_rondas
+            mejor_de_sets_error = torneo.mejor_de_sets_final if es_partido_final else torneo.mejor_de_sets
+            
+            sets = list(range(1, mejor_de_sets_error + 1))
+            sets_values = {}
+            for set_num in sets:
+                sets_values[f"set{set_num}_jugador1"] = getattr(resultado, f"set{set_num}_jugador1", "")
+                sets_values[f"set{set_num}_jugador2"] = getattr(resultado, f"set{set_num}_jugador2", "")
             context = {
                 'torneo': torneo,
                 'partido': partido,
                 'resultado': resultado,
-                'mejor_de_sets': torneo.mejor_de_sets,
-                'sets_para_ganar': (torneo.mejor_de_sets // 2) + 1,
+                'mejor_de_sets': mejor_de_sets_error,
+                'sets_para_ganar': (mejor_de_sets_error // 2) + 1,
                 'sets_guardados': resultado.obtener_sets_guardados(),
+                'sets': sets,
+                'sets_values': sets_values,
+                'es_partido_final': es_partido_final,  # Indica si es un partido final
             }
             return render(request, 'registrar_resultado.html', context)
         except Exception as e:
             messages.error(request, f"Error al guardar el resultado: {str(e)}")
             # Mantener en la misma página para mostrar el error
+            # Determinar modalidad correcta para mostrar el error
+            total_rondas = torneo.llaves.aggregate(max_ronda=models.Max('ronda'))['max_ronda'] or 1
+            es_partido_final = partido.llave_torneo.ronda == total_rondas
+            mejor_de_sets_error = torneo.mejor_de_sets_final if es_partido_final else torneo.mejor_de_sets
+            
+            sets = list(range(1, mejor_de_sets_error + 1))
+            sets_values = {}
+            for set_num in sets:
+                sets_values[f"set{set_num}_jugador1"] = getattr(resultado, f"set{set_num}_jugador1", "")
+                sets_values[f"set{set_num}_jugador2"] = getattr(resultado, f"set{set_num}_jugador2", "")
             context = {
                 'torneo': torneo,
                 'partido': partido,
                 'resultado': resultado,
-                'mejor_de_sets': torneo.mejor_de_sets,
-                'sets_para_ganar': (torneo.mejor_de_sets // 2) + 1,
+                'mejor_de_sets': mejor_de_sets_error,
+                'sets_para_ganar': (mejor_de_sets_error // 2) + 1,
                 'sets_guardados': resultado.obtener_sets_guardados(),
+                'sets': sets,
+                'sets_values': sets_values,
+                'es_partido_final': es_partido_final,  # Indica si es un partido final
             }
             return render(request, 'registrar_resultado.html', context)
     
-    # Calcular información del torneo para mostrar
-    mejor_de_sets = torneo.mejor_de_sets
-    sets_para_ganar = (mejor_de_sets // 2) + 1
+    # Determinar si es un partido final para mostrar la modalidad correcta
+    total_rondas = torneo.llaves.aggregate(max_ronda=models.Max('ronda'))['max_ronda'] or 1
+    es_partido_final = partido.llave_torneo.ronda == total_rondas
     
+    # Usar la modalidad correcta según si es final o no
+    mejor_de_sets = torneo.mejor_de_sets_final if es_partido_final else torneo.mejor_de_sets
+    sets_para_ganar = (mejor_de_sets // 2) + 1
+    sets = list(range(1, mejor_de_sets + 1))  # Lista dinámica de sets [1, 2, 3, ..., mejor_de_sets]
+    
+    # Crear diccionario con valores de sets para facilitar acceso en template
+    sets_values = {}
+    for set_num in sets:
+        sets_values[f"set{set_num}_jugador1"] = getattr(resultado, f"set{set_num}_jugador1", "")
+        sets_values[f"set{set_num}_jugador2"] = getattr(resultado, f"set{set_num}_jugador2", "")
+
     context = {
         'torneo': torneo,
         'partido': partido,
@@ -2564,6 +3047,747 @@ def registrar_resultado(request, torneo_id, partido_id):
         'mejor_de_sets': mejor_de_sets,
         'sets_para_ganar': sets_para_ganar,
         'sets_guardados': resultado.obtener_sets_guardados(),
+        'sets': sets,  # Lista dinámica de sets
+        'sets_values': sets_values,  # Valores de los sets
+        'es_partido_final': es_partido_final,  # Indica si es un partido final
     }
     
     return render(request, 'registrar_resultado.html', context)
+
+def crear_partido_tercer_lugar(torneo, llaves_semifinales):
+    """
+    Crea automáticamente una llave y partido de tercer lugar después de completar las semifinales.
+    """
+    try:
+        if llaves_semifinales.count() != 2:
+            return False, "Se requieren exactamente 2 semifinales"
+        
+        # Verificar si ya existe
+        if LlaveTorneo.objects.filter(torneo=torneo, tipo_llave='tercer_lugar').exists():
+            return True, "Llave de tercer lugar ya existe"
+        
+        # Obtener perdedores
+        perdedores = []
+        for semifinal in llaves_semifinales:
+            if semifinal.ganador:
+                if semifinal.jugador1 == semifinal.ganador:
+                    perdedor = semifinal.jugador2
+                elif semifinal.jugador2 == semifinal.ganador:
+                    perdedor = semifinal.jugador1
+                
+                if perdedor:
+                    perdedores.append(perdedor)
+        
+        if len(perdedores) != 2:
+            return False, f"Se necesitan 2 perdedores, se encontraron {len(perdedores)}"
+        
+        # Calcular la siguiente posición disponible
+        ronda_semifinales = llaves_semifinales.first().ronda
+        ultima_posicion = LlaveTorneo.objects.filter(
+            torneo=torneo, 
+            tipo_llave='normal'
+        ).aggregate(models.Max('posicion'))['posicion__max'] or 0
+        
+        # Crear llave de tercer lugar
+        llave_tercer_lugar = LlaveTorneo.objects.create(
+            torneo=torneo,
+            ronda=ronda_semifinales,
+            posicion=ultima_posicion + 1,
+            tipo_llave='tercer_lugar',
+            jugador1=perdedores[0],
+            jugador2=perdedores[1],
+            estado_partido='en_curso'  # Cambiar a 'en_curso' para permitir registro de resultados
+        )
+        
+        # Crear partido
+        partido_tercer_lugar = Partido.objects.create(
+            torneo=torneo,
+            llave_torneo=llave_tercer_lugar,
+            jugador1=perdedores[0],
+            jugador2=perdedores[1],
+            estado_partido='en_curso',  # Cambiar a 'en_curso' para permitir registro de resultados
+            organizador=torneo.organizador
+        )
+        
+        # Crear resultado
+        Resultado.objects.create(partido=partido_tercer_lugar)
+        
+        return True, f"Partido de tercer lugar creado: {perdedores[0].nombre} vs {perdedores[1].nombre}"
+        
+    except Exception as e:
+        return False, f"Error al crear partido de tercer lugar: {str(e)}"
+
+def avanzar_ganadores_automaticamente(torneo):
+    """
+    Verifica si una ronda está completa y automáticamente avanza a los ganadores 
+    a la siguiente ronda para torneos de cualquier tamaño (2, 4, 8, 16, 32, 64, 128, etc.).
+    """
+    
+    try:
+        # Obtener todas las rondas del torneo
+        total_rondas = LlaveTorneo.objects.filter(torneo=torneo).aggregate(
+            max_ronda=models.Max('ronda')
+        )['max_ronda']
+        
+        if not total_rondas:
+            return False, "No hay llaves en el torneo"
+        
+        # Revisar cada ronda de la primera hacia adelante
+        for ronda_actual in range(1, total_rondas + 1):
+            # Obtener todas las llaves de esta ronda
+            llaves_ronda = LlaveTorneo.objects.filter(
+                torneo=torneo, 
+                ronda=ronda_actual
+            ).order_by('posicion')
+            
+            if not llaves_ronda.exists():
+                continue
+            
+            # CORRECCION: Solo considerar llaves normales para determinar si la ronda está completa
+            # Las llaves de tercer lugar no deben bloquear el avance
+            llaves_normales_ronda = llaves_ronda.filter(tipo_llave='normal')
+            
+            # Verificar si todos los partidos NORMALES de esta ronda están completos
+            total_partidos = llaves_normales_ronda.count()
+            partidos_completados = llaves_normales_ronda.filter(ganador__isnull=False).count()
+            
+            print(f"📊 Ronda {ronda_actual}: {partidos_completados}/{total_partidos} partidos normales completados")
+            
+            # Si esta ronda no está completa, detenemos aquí
+            if partidos_completados < total_partidos:
+                return False, f"Ronda {ronda_actual} incompleta ({partidos_completados}/{total_partidos} partidos normales)"
+            
+            # Si es la penúltima ronda (semifinales), crear partido de tercer lugar
+            if ronda_actual == total_rondas - 1:
+                # Usar llaves normales para semifinales (ya filtradas arriba)
+                if llaves_normales_ronda.count() == 2:
+                    exito, mensaje = crear_partido_tercer_lugar(torneo, llaves_normales_ronda)
+                    if exito:
+                        print(f"🥉 {mensaje}")
+                    else:
+                        print(f"⚠️  Tercer lugar: {mensaje}")
+            
+            # Si es la última ronda y está completa, el torneo terminó
+            if ronda_actual == total_rondas:
+                ganador_final = llaves_normales_ronda.first().ganador
+                if ganador_final:
+                    return True, f"🏆 ¡Torneo finalizado! Campeón: {ganador_final.nombre} {ganador_final.apellido}"
+                else:
+                    return False, "Error: Última ronda completa pero sin ganador"
+            
+            # Verificar si existe la siguiente ronda
+            ronda_siguiente = ronda_actual + 1
+            llaves_siguiente_ronda = LlaveTorneo.objects.filter(
+                torneo=torneo, 
+                ronda=ronda_siguiente,
+                tipo_llave='normal'  # Solo considerar llaves normales para el avance
+            ).order_by('posicion')
+            
+            if not llaves_siguiente_ronda.exists():
+                return False, f"No existen llaves normales para la ronda {ronda_siguiente}"
+            
+            # Obtener todos los ganadores de la ronda actual ordenados por posición
+            ganadores = []
+            for llave in llaves_normales_ronda:  # Solo de llaves normales
+                if llave.ganador:
+                    ganadores.append(llave.ganador)
+                else:
+                    return False, f"Llave {llave.posicion} de ronda {ronda_actual} sin ganador"
+            
+            print(f"🏃 Ganadores de ronda {ronda_actual}: {[f'{g.nombre} {g.apellido}' for g in ganadores]}")
+            
+            # Avanzar ganadores a la siguiente ronda
+            with transaction.atomic():
+                ganadores_avanzados = 0
+                
+                # Cada par de ganadores va a una llave de la siguiente ronda
+                for i in range(0, len(ganadores), 2):
+                    if i // 2 < llaves_siguiente_ronda.count():
+                        llave_destino = llaves_siguiente_ronda[i // 2]
+                        
+                        # Limpiar la llave primero (en caso de avances previos incorrectos)
+                        actualizar_llave = False
+                        
+                        # Asignar primer ganador
+                        if i < len(ganadores):
+                            if llave_destino.jugador1 != ganadores[i]:
+                                llave_destino.jugador1 = ganadores[i]
+                                llave_destino.bye1 = None  # Limpiar BYE si hay
+                                actualizar_llave = True
+                                ganadores_avanzados += 1
+                                print(f"✅ {ganadores[i].nombre} avanza a ronda {ronda_siguiente}, posición {llave_destino.posicion} (jugador1)")
+                        
+                        # Asignar segundo ganador (si existe)
+                        if i + 1 < len(ganadores):
+                            if llave_destino.jugador2 != ganadores[i + 1]:
+                                llave_destino.jugador2 = ganadores[i + 1]
+                                llave_destino.bye2 = None  # Limpiar BYE si hay
+                                actualizar_llave = True
+                                ganadores_avanzados += 1
+                                print(f"✅ {ganadores[i + 1].nombre} avanza a ronda {ronda_siguiente}, posición {llave_destino.posicion} (jugador2)")
+                        elif i < len(ganadores):
+                            # Solo hay un ganador (número impar), el otro slot queda vacío por ahora
+                            # Esto se manejará en la siguiente iteración o queda como BYE
+                            pass
+                        
+                        # Guardar cambios en la llave
+                        if actualizar_llave:
+                            # Solo resetear estado si no hay partido asociado o si está pendiente
+                            partido_llave = Partido.objects.filter(llave_torneo=llave_destino).first()
+                            if not partido_llave or partido_llave.estado_partido == 'pendiente':
+                                llave_destino.estado_partido = 'pendiente'
+                            llave_destino.ganador = None  # Limpiar ganador de ronda anterior
+                            llave_destino.save()
+                
+                # Después de asignar TODOS los jugadores a las llaves, crear/actualizar los partidos
+                for llave_destino in llaves_siguiente_ronda:
+                    # Solo procesar llaves que tienen al menos un jugador asignado
+                    if llave_destino.jugador1 or llave_destino.jugador2:
+                        # Buscar si ya existe un partido para esta llave
+                        partido_existente = Partido.objects.filter(
+                            torneo=torneo, 
+                            llave_torneo=llave_destino
+                        ).first()
+                        
+                        if not partido_existente:
+                            # Crear nuevo partido con AMBOS jugadores
+                            nuevo_partido = Partido.objects.create(
+                                torneo=torneo,
+                                llave_torneo=llave_destino,
+                                jugador1=llave_destino.jugador1,
+                                jugador2=llave_destino.jugador2,
+                                bye1=llave_destino.bye1,
+                                bye2=llave_destino.bye2,
+                                estado_partido='pendiente',
+                                organizador=torneo.organizador
+                            )
+                            
+                            # Crear resultado automáticamente
+                            Resultado.objects.create(partido=nuevo_partido)
+                            print(f"🆕 Partido creado para ronda {ronda_siguiente}, posición {llave_destino.posicion} - J1: {nuevo_partido.jugador1}, J2: {nuevo_partido.jugador2}")
+                            
+                            # Si es un partido con BYE, procesarlo automáticamente
+                            if nuevo_partido.es_partido_bye():
+                                nuevo_partido.procesar_partido_bye()
+                                print(f"🤖 BYE procesado automáticamente en ronda {ronda_siguiente}")
+                        
+                        else:
+                            # Actualizar partido existente con AMBOS jugadores
+                            partido_existente.jugador1 = llave_destino.jugador1
+                            partido_existente.jugador2 = llave_destino.jugador2
+                            partido_existente.bye1 = llave_destino.bye1
+                            partido_existente.bye2 = llave_destino.bye2
+                            # Solo resetear estado si el partido no está finalizado
+                            if partido_existente.estado_partido not in ['jugado'] and not partido_existente.finalizado and not partido_existente.ganador:
+                                partido_existente.estado_partido = 'pendiente'
+                            partido_existente.save()
+                            print(f"🔄 Partido actualizado para ronda {ronda_siguiente}, posición {llave_destino.posicion} - J1: {partido_existente.jugador1}, J2: {partido_existente.jugador2}")
+                
+                if ganadores_avanzados > 0:
+                    print(f"🎯 {ganadores_avanzados} ganadores avanzados de ronda {ronda_actual} a ronda {ronda_siguiente}")
+                    # Continuar verificando la siguiente ronda
+                    continue
+                else:
+                    print(f"ℹ️  Ronda {ronda_actual} ya había sido procesada anteriormente")
+        
+        return True, "✅ Avance automático completado para todas las rondas disponibles"
+        
+    except Exception as e:
+        print(f"❌ Error en avance automático: {str(e)}")
+        return False, f"Error al avanzar ganadores: {str(e)}"
+
+def sincronizar_ganador_partido_llave(partido):
+    """
+    Función de utilidad para asegurar que el ganador del partido 
+    se sincronice inmediatamente con la llave correspondiente
+    """
+    if partido.ganador and partido.llave_torneo:
+        if partido.llave_torneo.ganador != partido.ganador:
+            partido.llave_torneo.ganador = partido.ganador
+            partido.llave_torneo.estado_partido = 'jugado'
+            partido.llave_torneo.save()
+            print(f"✅ Sincronizado ganador {partido.ganador.nombre} en llave {partido.llave_torneo.id}")
+
+@login_required
+def asignar_arbitro_partido(request, torneo_id, partido_id):
+    """Vista para asignar un árbitro a un partido específico"""
+    torneo = get_object_or_404(Torneo, id=torneo_id, organizador=request.user)
+    partido = get_object_or_404(Partido, id=partido_id, torneo=torneo)
+    
+    if request.method == 'POST':
+        arbitro_id = request.POST.get('arbitro_id')
+        
+        if arbitro_id:
+            try:
+                # Verificar que el árbitro esté asignado al torneo
+                arbitro_torneo = ArbitroTorneo.objects.get(
+                    torneo=torneo,
+                    arbitro_id=arbitro_id,
+                    activo=True
+                )
+                
+                # Asignar el árbitro al partido
+                partido.arbitro = arbitro_torneo.arbitro
+                partido.save()
+                
+                messages.success(request, f"Árbitro {arbitro_torneo.arbitro.first_name} {arbitro_torneo.arbitro.last_name} asignado exitosamente al partido.")
+                
+            except ArbitroTorneo.DoesNotExist:
+                messages.error(request, "El árbitro seleccionado no está asignado a este torneo.")
+        else:
+            # Remover asignación de árbitro
+            partido.arbitro = None
+            partido.save()
+            messages.success(request, "Asignación de árbitro removida del partido.")
+    
+    return redirect('iniciar_partidos', torneo_id=torneo.id)
+
+@login_required
+def ver_puntaje_vivo(request, torneo_id, partido_id):
+    """Vista para mostrar el puntaje en vivo de un partido"""
+    torneo = get_object_or_404(Torneo, id=torneo_id)
+    partido = get_object_or_404(Partido, id=partido_id, torneo=torneo)
+    
+    # Verificar que el partido tenga árbitro asignado
+    if not partido.arbitro:
+        messages.error(request, "Este partido no tiene árbitro asignado.")
+        return redirect('iniciar_partidos', torneo_id=torneo.id)
+    
+    # Verificar permisos (organizador, árbitro del partido, o cualquier usuario autenticado para visualizar)
+    puede_ver = (
+        request.user == torneo.organizador or 
+        request.user == partido.arbitro or
+        request.user.is_authenticated  # Permitir a cualquier usuario autenticado ver el puntaje
+    )
+    
+    if not puede_ver:
+        messages.error(request, "No tienes permisos para ver este partido.")
+        return redirect('iniciar_partidos', torneo_id=torneo.id)
+    
+    # Determinar si el usuario puede controlar el puntaje (solo árbitro del partido)
+    puede_controlar = request.user == partido.arbitro
+    
+    context = {
+        'torneo': torneo,
+        'partido': partido,
+        'puede_controlar': puede_controlar,
+        'es_arbitro': request.user == partido.arbitro,
+        'es_organizador': request.user == torneo.organizador,
+        'pendiente_confirmacion': partido.pendiente_confirmacion,  # NUEVO
+    }
+    
+    return render(request, 'puntaje_vivo.html', context)
+
+@login_required
+@require_POST
+def confirmar_resultado_partido(request, torneo_id, partido_id):
+    """Vista para que el organizador confirme y cierre un partido"""
+    torneo = get_object_or_404(Torneo, id=torneo_id, organizador=request.user)
+    partido = get_object_or_404(Partido, id=partido_id, torneo=torneo)
+    
+    if not partido.pendiente_confirmacion:
+        messages.error(request, "Este partido no está pendiente de confirmación.")
+        return redirect('iniciar_partidos', torneo_id=torneo.id)
+    
+    # Confirmar y cerrar el partido
+    cerrado, mensaje = partido.confirmar_y_cerrar_partido()
+    
+    if cerrado:
+        messages.success(request, f"¡{mensaje}!")
+        
+        # Si el torneo es de llaves, intentar avanzar ganadores automáticamente
+        if torneo.modalidad == 'llaves':
+            avanzado, mensaje_avance = avanzar_ganadores_automaticamente(torneo)
+            if avanzado:
+                messages.info(request, mensaje_avance)
+    else:
+        messages.error(request, f"Error: {mensaje}")
+    
+    return redirect('iniciar_partidos', torneo_id=torneo.id)
+
+@login_required
+def verificar_estado_partido_ajax(request, torneo_id, partido_id):
+    """Vista AJAX para verificar el estado del partido en tiempo real"""
+    try:
+        torneo = get_object_or_404(Torneo, id=torneo_id)
+        partido = get_object_or_404(Partido, id=partido_id, torneo=torneo)
+        
+        # Verificar permisos
+        puede_ver = (
+            request.user == torneo.organizador or 
+            request.user == partido.arbitro or
+            request.user.is_authenticated
+        )
+        
+        if not puede_ver:
+            return JsonResponse({'error': 'Sin permisos'}, status=403)
+        
+        data = {
+            'pendiente_confirmacion': partido.pendiente_confirmacion,
+            'estado_partido': partido.estado_partido,
+            'es_organizador': request.user == torneo.organizador,
+            'es_arbitro': request.user == partido.arbitro,
+        }
+        
+        if partido.pendiente_confirmacion and partido.ganador:
+            data['ganador_nombre'] = f"{partido.ganador.nombre} {partido.ganador.apellido}"
+        
+        return JsonResponse(data)
+        
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+    
+@login_required
+@require_organizador
+def corregir_estados_partidos(request, torneo_id):
+    """Vista para corregir estados de partidos que están mal configurados"""
+    torneo = get_object_or_404(Torneo, id=torneo_id, organizador=request.user)
+    
+    if request.method == 'POST':
+        partidos = Partido.objects.filter(torneo=torneo)
+        partidos_corregidos = 0
+        
+        for partido in partidos:
+            # Si tiene ambos jugadores y no es BYE, debería estar "en_curso"
+            if (partido.jugador1 and partido.jugador2 and 
+                not partido.bye1 and not partido.bye2 and 
+                partido.estado_partido == 'pendiente'):
+                
+                partido.estado_partido = 'en_curso'
+                partido.save()
+                partidos_corregidos += 1
+        
+        if partidos_corregidos > 0:
+            messages.success(request, f"✅ {partidos_corregidos} partidos corregidos a estado 'en curso'")
+        else:
+            messages.info(request, "✅ No se encontraron partidos que requieran corrección de estado")
+    
+    return redirect('iniciar_partidos', torneo_id=torneo.id)
+
+@login_required
+@require_organizador
+def asignar_arbitros_masivo(request, torneo_id):
+    """Vista para asignar árbitros de forma masiva a todos los partidos del torneo"""
+    torneo = get_object_or_404(Torneo, id=torneo_id, organizador=request.user)
+    
+    if request.method == 'POST':
+        # Obtener árbitros disponibles
+        arbitros_torneo = ArbitroTorneo.objects.filter(torneo=torneo, activo=True)
+        
+        if not arbitros_torneo.exists():
+            messages.error(request, "❌ No hay árbitros asignados a este torneo. Primero asigna árbitros.")
+            return redirect('gestionar_torneo', torneo_id=torneo.id)
+        
+        arbitros_lista = list(arbitros_torneo)
+        
+        # Obtener partidos sin árbitro que estén en curso o pendientes
+        partidos_sin_arbitro = Partido.objects.filter(
+            torneo=torneo,
+            arbitro__isnull=True,
+            estado_partido__in=['en_curso', 'pendiente']
+        ).order_by('llave_torneo__ronda', 'llave_torneo__posicion')
+        
+        if not partidos_sin_arbitro.exists():
+            messages.info(request, "✅ Todos los partidos ya tienen árbitros asignados")
+            return redirect('iniciar_partidos', torneo_id=torneo.id)
+        
+        partidos_asignados = 0
+        arbitro_index = 0
+        
+        # Asignar árbitros de forma rotativa
+        for partido in partidos_sin_arbitro:
+            arbitro_asignado = arbitros_lista[arbitro_index % len(arbitros_lista)]
+            partido.arbitro = arbitro_asignado.arbitro
+            partido.save()
+            partidos_asignados += 1
+            arbitro_index += 1
+        
+        messages.success(request, f"🎉 {partidos_asignados} partidos asignados con árbitros de forma automática")
+    
+    return redirect('iniciar_partidos', torneo_id=torneo.id)
+
+@login_required
+@require_organizador
+def corregir_torneo_completo(request, torneo_id):
+
+    """Vista para corregir todos los problemas de un torneo de una vez"""
+    torneo = get_object_or_404(Torneo, id=torneo_id, organizador=request.user)
+    
+    if request.method == 'POST':
+        problemas_corregidos = []
+        
+        # 1. Corregir estados de partidos
+        partidos = Partido.objects.filter(torneo=torneo)
+        partidos_estado_corregidos = 0
+        
+        for partido in partidos:
+            if (partido.jugador1 and partido.jugador2 and 
+                not partido.bye1 and not partido.bye2 and 
+                partido.estado_partido == 'pendiente'):
+                
+                partido.estado_partido = 'en_curso'
+                partido.save()
+                partidos_estado_corregidos += 1
+        
+        if partidos_estado_corregidos > 0:
+            problemas_corregidos.append(f"Estados corregidos: {partidos_estado_corregidos} partidos")
+        
+        # 2. Asignar árbitros faltantes
+        arbitros_torneo = ArbitroTorneo.objects.filter(torneo=torneo, activo=True)
+        
+        if arbitros_torneo.exists():
+            arbitros_lista = list(arbitros_torneo)
+            partidos_sin_arbitro = Partido.objects.filter(
+                torneo=torneo,
+                arbitro__isnull=True,
+                estado_partido__in=['en_curso', 'pendiente']
+            )
+            
+            partidos_arbitros_asignados = 0
+            arbitro_index = 0
+            
+            for partido in partidos_sin_arbitro:
+                arbitro_asignado = arbitros_lista[arbitro_index % len(arbitros_lista)]
+                partido.arbitro = arbitro_asignado.arbitro
+                partido.save()
+                partidos_arbitros_asignados += 1
+                arbitro_index += 1
+            
+            if partidos_arbitros_asignados > 0:
+                problemas_corregidos.append(f"Árbitros asignados: {partidos_arbitros_asignados} partidos")
+        
+        # 3. Crear resultados faltantes
+        partidos_sin_resultado = []
+        for partido in partidos:
+            if partido.estado_partido == 'en_curso' and partido.jugador1 and partido.jugador2:
+                try:
+                    partido.resultado_detallado
+                except:
+                    from .models import Resultado
+                    Resultado.objects.create(partido=partido)
+                    partidos_sin_resultado.append(partido)
+        
+        if partidos_sin_resultado:
+            problemas_corregidos.append(f"Resultados creados: {len(partidos_sin_resultado)} partidos")
+        
+        # Mensaje final
+        if problemas_corregidos:
+            mensaje = "🎉 Corrección completa del torneo:\n" + "\n".join([f"✅ {problema}" for problema in problemas_corregidos])
+            messages.success(request, mensaje)
+        else:
+            messages.info(request, "✅ El torneo ya está correctamente configurado")
+    
+    return redirect('iniciar_partidos', torneo_id=torneo.id)
+
+def verificar_torneo_completado(torneo):
+    """
+    Verifica si los partidos esenciales del torneo están completados (Final y Tercer Lugar)
+    El torneo se considera completado cuando:
+    1. TODOS los partidos Final (ronda 1) están terminados con ganador
+    2. TODOS los partidos de Tercer Lugar están terminados con ganador (si existen)
+    """
+    
+    # 1. Verificar si existen y están terminados TODOS los partidos Final (ronda 1)
+    partidos_final = Partido.objects.filter(
+        torneo=torneo,
+        llave_torneo__ronda=1,
+        llave_torneo__tipo_llave='normal'
+    )
+    
+    final_completado = False
+    if partidos_final.exists():
+        # TODOS los partidos finales deben estar jugados con ganador
+        final_completado = all(
+            partido.estado_partido == 'jugado' and partido.ganador is not None
+            for partido in partidos_final
+        )
+    else:
+        # Si no hay partido final, el torneo no puede estar completado
+        return False
+    
+    # 2. Verificar si existen y están terminados TODOS los partidos de Tercer Lugar
+    partidos_tercer_lugar = Partido.objects.filter(
+        torneo=torneo,
+        llave_torneo__tipo_llave='tercer_lugar'
+    )
+    
+    tercer_lugar_completado = True  # Por defecto True para torneos sin tercer lugar
+    if partidos_tercer_lugar.exists():
+        # TODOS los partidos de tercer lugar deben estar jugados con ganador
+        tercer_lugar_completado = all(
+            partido.estado_partido == 'jugado' and partido.ganador is not None
+            for partido in partidos_tercer_lugar
+        )
+    
+    # El torneo está completado si tanto Final como Tercer Lugar están terminados
+    # (o si no hay partido de tercer lugar en torneos pequeños)
+    resultado = final_completado and tercer_lugar_completado
+    
+    # Debug logging para diagnosticar
+    print(f"🏆 Verificación torneo completado '{torneo.nombre}':")
+    print(f"   - Partidos Final encontrados: {partidos_final.count()}")
+    print(f"   - Final completado: {final_completado}")
+    print(f"   - Partidos Tercer Lugar encontrados: {partidos_tercer_lugar.count()}")
+    print(f"   - Tercer lugar completado: {tercer_lugar_completado}")
+    print(f"   - Resultado final: {resultado}")
+    
+    return resultado    
+
+def generar_clasificacion_final(torneo):
+    """
+    Genera la clasificación final del torneo basada en las posiciones alcanzadas
+    """
+    clasificacion = []
+    
+    # 1. CAMPEÓN - Ganador de la final (ronda más alta)
+    ronda_maxima = LlaveTorneo.objects.filter(
+        torneo=torneo, 
+        tipo_llave='normal'
+    ).aggregate(models.Max('ronda'))['ronda__max']
+    
+    if ronda_maxima:
+        partido_final = Partido.objects.filter(
+            torneo=torneo,
+            llave_torneo__ronda=ronda_maxima,
+            llave_torneo__tipo_llave='normal',
+            estado_partido='jugado'
+        ).first()
+        
+        if partido_final and partido_final.ganador:
+            clasificacion.append({
+                'posicion': 1,
+                'jugador': partido_final.ganador,
+                'titulo': '🏆 Campeón'
+            })
+            
+            # 2. SUBCAMPEÓN - Perdedor de la final
+            perdedor_final = partido_final.jugador1 if partido_final.ganador == partido_final.jugador2 else partido_final.jugador2
+            if perdedor_final:
+                clasificacion.append({
+                    'posicion': 2,
+                    'jugador': perdedor_final,
+                    'titulo': '🥈 Subcampeón'
+                })
+    
+    # 3. TERCER LUGAR - Ganador del partido de tercer lugar
+    partido_tercer_lugar = Partido.objects.filter(
+        torneo=torneo,
+        llave_torneo__tipo_llave='tercer_lugar',
+        estado_partido='jugado'
+    ).first()
+    
+    if partido_tercer_lugar and partido_tercer_lugar.ganador:
+        clasificacion.append({
+            'posicion': 3,
+            'jugador': partido_tercer_lugar.ganador,
+            'titulo': '🥉 Tercer Lugar'
+        })
+        
+        # 4. CUARTO LUGAR - Perdedor del partido de tercer lugar
+        perdedor_tercer_lugar = (
+            partido_tercer_lugar.jugador1 
+            if partido_tercer_lugar.ganador == partido_tercer_lugar.jugador2 
+            else partido_tercer_lugar.jugador2
+        )
+        if perdedor_tercer_lugar:
+            clasificacion.append({
+                'posicion': 4,
+                'jugador': perdedor_tercer_lugar,
+                'titulo': '4º Lugar'
+            })
+    
+    # 5. SEMIFINALISTAS - Perdedores de semifinales (si no están en tercer lugar)
+    if ronda_maxima and ronda_maxima > 1:
+        ronda_semifinales = ronda_maxima - 1
+        partidos_semifinales = Partido.objects.filter(
+            torneo=torneo,
+            llave_torneo__ronda=ronda_semifinales,
+            llave_torneo__tipo_llave='normal',
+            estado_partido='jugado'
+        )
+        
+        posicion_actual = 5
+        jugadores_ya_clasificados = [c['jugador'] for c in clasificacion]
+        
+        for partido in partidos_semifinales:
+            if partido.ganador:
+                perdedor = (
+                    partido.jugador1 
+                    if partido.ganador == partido.jugador2 
+                    else partido.jugador2
+                )
+                
+                # Solo agregar si no está ya en la clasificación (tercer/cuarto lugar)
+                if perdedor and perdedor not in jugadores_ya_clasificados:
+                    clasificacion.append({
+                        'posicion': posicion_actual,
+                        'jugador': perdedor,
+                        'titulo': f'{posicion_actual}º Lugar (Semifinalista)'
+                    })
+                    posicion_actual += 1
+    
+    # 6. RESTO DE JUGADORES - Por ronda de eliminación
+    # Obtener todos los jugadores únicos que participaron en el torneo
+    jugadores_en_partidos = set()
+    todos_partidos = Partido.objects.filter(torneo=torneo)
+    for partido in todos_partidos:
+        if partido.jugador1:
+            jugadores_en_partidos.add(partido.jugador1)
+        if partido.jugador2:
+            jugadores_en_partidos.add(partido.jugador2)
+
+    jugadores_ya_clasificados = [c['jugador'] for c in clasificacion]
+    
+    # Clasificar el resto por ronda de eliminación (ronda más alta alcanzada)
+    resto_jugadores = []
+    for jugador in jugadores_en_partidos:
+        if jugador not in jugadores_ya_clasificados:
+            # Encontrar la ronda más alta donde este jugador fue eliminado
+            partidos_perdidos = Partido.objects.filter(
+                torneo=torneo,
+                estado_partido='jugado'
+            ).filter(
+                models.Q(jugador1=jugador) | models.Q(jugador2=jugador)
+            ).exclude(
+                ganador=jugador
+            ).order_by('-llave_torneo__ronda')
+            
+            ronda_eliminacion = 1
+            if partidos_perdidos.exists():
+                ronda_eliminacion = partidos_perdidos.first().llave_torneo.ronda
+            
+            resto_jugadores.append({
+                'jugador': jugador,
+                'titulo': f'Eliminado en Ronda {ronda_eliminacion}',
+                'ronda_eliminacion': ronda_eliminacion
+            })
+    
+    # Ordenar resto por ronda de eliminación (mayor ronda = mejor posición)
+    resto_jugadores.sort(key=lambda x: -x['ronda_eliminacion'])
+    
+    # Agregar a la clasificación con posiciones consecutivas
+    posicion_actual = len(clasificacion) + 1
+    for jugador_info in resto_jugadores:
+        jugador_info['posicion'] = posicion_actual
+        clasificacion.append(jugador_info)
+        posicion_actual += 1
+    
+    return clasificacion
+    
+@login_required
+def resultados_torneo(request, torneo_id):
+    """Vista para mostrar la clasificación final del torneo"""
+    torneo = get_object_or_404(Torneo, id=torneo_id)
+    
+    # Generar clasificación (parcial o completa)
+    clasificacion_final = generar_clasificacion_final(torneo)
+    torneo_completado = verificar_torneo_completado(torneo)
+    
+    context = {
+        'torneo': torneo,
+        'clasificacion_final': clasificacion_final,
+        'torneo_completado': torneo_completado,
+        'es_organizador': request.user == torneo.organizador,
+    }
+    
+    return render(request, 'resultados_torneo.html', context)

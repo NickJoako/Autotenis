@@ -19,42 +19,81 @@ class ImportarParticipantesForm(forms.Form):
 
 class RegistroPersonalizadoForm(UserCreationForm):
 
+    username = forms.CharField(
+        label="Nombre de usuario",
+        max_length=20,
+        required=True,
+        widget=forms.TextInput(attrs={
+            "placeholder": "Ingrese un nombre de usuario",
+            "class": "form-control"
+        })
+    )
+
+    first_name = forms.CharField(
+        label="Nombre",
+        max_length=30,
+        required=True,
+        widget=forms.TextInput(attrs={
+            "placeholder": "Ingrese su nombre",
+            "class": "form-control"
+        })
+    )
+    
+    last_name = forms.CharField(
+        label="Apellido",
+        max_length=30,
+        required=True,
+        widget=forms.TextInput(attrs={
+            "placeholder": "Ingrese su apellido",
+            "class": "form-control"
+        })
+    )
+
     email = forms.EmailField(
         label="Correo electrónico", 
-        required=False, 
+        required=True,  # Ahora es obligatorio porque será el campo de login
         widget=forms.EmailInput(attrs={
-            "placeholder": "Opcional",
+            "placeholder": "Ingrese su correo electrónico",
             "class": "form-control"
         }),
     )
 
     password1 = forms.CharField(
         label='Contraseña',
-        widget=forms.PasswordInput(attrs={'placeholder': 'Ingrese su contraseña'}),
+        widget=forms.PasswordInput(attrs={
+            'placeholder': 'Ingrese su contraseña',
+            "class": "form-control"
+            }),
         help_text='La contraseña debe tener al menos 8 caracteres, una letra mayúscula y un número.'
     )
     password2 = forms.CharField(
         label="Confirmar contraseña",
-        widget=forms.PasswordInput,
+        widget=forms.PasswordInput(attrs={
+            'placeholder': 'Confirme su contraseña',
+            "class": "form-control"
+        }),
         strip=False,
         help_text="Repite la contraseña para confirmar.",
     )
 
     tipo_usuario = forms.ChoiceField(
         choices=[
-            ('',''),
             ('organizador', 'Organizador'),
             ('arbitro', 'Árbitro'),
             ('jugador', 'Jugador')
         ],
         label="Tipo de Usuario",
         required=True,
-        widget=forms.Select(attrs={'class': 'form-select'}),
+        widget=forms.Select(attrs={
+            'class': 'form-select',
+            'placeholder': 'Seleccione un tipo de usuario'
+        }),
+        help_text="Debe seleccionar un tipo de usuario para continuar.",
     )
 
     class Meta:
         model = UsuarioPersonalizado
-        fields = ['username', 'email', 'password1', 'password2','tipo_usuario']
+        fields = ['username', 'first_name', 'last_name', 'email', 'password1', 'password2', 'tipo_usuario']
     
     def clean_username(self):
         username = self.cleaned_data.get('username')
@@ -80,13 +119,50 @@ class RegistroPersonalizadoForm(UserCreationForm):
         if password1 and password2 and password1 != password2:
             raise ValidationError("Las contraseñas no coinciden.")
         
+    def clean_tipo_usuario(self):
+        tipo_usuario = self.cleaned_data.get('tipo_usuario')
+        
+        if not tipo_usuario:
+            raise forms.ValidationError("Debe seleccionar un tipo de usuario.")
+        
+        if tipo_usuario not in ['organizador', 'arbitro', 'jugador']:
+            raise forms.ValidationError("Tipo de usuario inválido.")
+        
+        return tipo_usuario
+
     def clean_email(self):
         email = self.cleaned_data.get('email')
-        if not email or email.strip().lower() == "opcional":
-            return None
-        if Jugador.objects.filter(email=email).exists():
-            raise forms.ValidationError("Ya existe un jugador con este correo electrónico.")
+        tipo_usuario = self.cleaned_data.get('tipo_usuario')
+        
+        if not email:
+            raise forms.ValidationError("El correo electrónico es obligatorio.")
+        
+        # Validar que no exista el mismo email para el mismo tipo de usuario
+        if UsuarioPersonalizado.objects.filter(email=email, tipo_usuario=tipo_usuario).exists():
+            raise forms.ValidationError(f"Ya existe un {tipo_usuario} con este correo electrónico.")
+        
         return email
+
+    def save(self, commit=True):
+        user = super().save(commit=False)
+        tipo_usuario = self.cleaned_data.get('tipo_usuario')
+        
+        # Asignar permisos según tipo de usuario
+        if tipo_usuario == 'organizador':
+            user.is_staff = True
+            user.is_superuser = False
+        elif tipo_usuario == 'arbitro':
+            user.is_staff = False
+            user.is_superuser = True
+        else:  # jugador
+            user.is_staff = False
+            user.is_superuser = False
+        
+        user.tipo_usuario = tipo_usuario
+        
+        if commit:
+            user.save()
+        return user
 
 class TorneoForm(forms.ModelForm):
     nombre = forms.CharField(

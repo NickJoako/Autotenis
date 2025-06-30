@@ -1,0 +1,276 @@
+{% load static %}
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AutoTenis - Partidos Asignados</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+      body {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      }
+      .arbitro-card {
+        background: rgba(255, 255, 255, 0.95);
+        border-radius: 20px;
+        box-shadow: 0 8px 32px rgba(31, 38, 135, 0.37);
+        backdrop-filter: blur(4px);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+      }
+      .btn-arbitro {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border: none;
+        border-radius: 12px;
+        padding: 8px 16px;
+        color: white;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        text-decoration: none;
+      }
+      .btn-arbitro:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+        color: white;
+      }
+      .btn-arbitro-disabled {
+        background: #6c757d !important;
+        border: none;
+        border-radius: 12px;
+        padding: 8px 16px;
+        color: white !important;
+        font-weight: 600;
+        cursor: not-allowed;
+      }
+      .btn-arbitro-disabled:hover {
+        transform: none;
+        box-shadow: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container-fluid p-4">
+      <div class="row justify-content-center">
+        <div class="col-lg-10">
+          <div class="arbitro-card">
+            <div class="p-4">
+              <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2><i class="bi bi-list-check text-primary me-2"></i>Partidos Asignados</h2>
+                <a href="{% url 'arbitros:panel' %}" class="btn btn-arbitro">
+                  <i class="bi bi-arrow-left me-2"></i>Volver al Panel
+                </a>
+              </div>
+
+              {% if partidos %}
+                <div class="row g-4">
+                  {% for partido in partidos %}
+                    <div class="col-md-6 col-lg-4">
+                      <div class="card h-100">
+                        <div class="card-header bg-primary text-white">
+                          <h6 class="mb-0">{{ partido.torneo.nombre }}</h6>
+                        </div>
+                        <div class="card-body">
+                          <h5 class="card-title">
+                            {{ partido.jugador1.nombre }} {{ partido.jugador1.apellido }}
+                            <br><small class="text-muted">vs</small><br>
+                            {{ partido.jugador2.nombre }} {{ partido.jugador2.apellido }}
+                          </h5>
+                          {% if partido.fecha_programada %}
+                            <p class="card-text">
+                              <i class="bi bi-calendar3 me-2"></i>{{ partido.fecha_programada }}
+                            </p>
+                          {% endif %}
+                          {% if partido.hora_programada %}
+                            <p class="card-text">
+                              <i class="bi bi-clock me-2"></i>{{ partido.hora_programada }}
+                            </p>
+                          {% endif %}
+                        </div>
+                        <div class="card-footer">
+                          {% if partido.pendiente_confirmacion %}
+                            <div class="alert alert-warning py-2 mb-2">
+                              <i class="bi bi-hourglass-split me-2"></i>
+                              <small><strong>Partido pendiente de confirmación</strong></small>
+                            </div>
+                            <button 
+                              class="btn btn-secondary w-100 btn-arbitro-disabled" 
+                              disabled
+                              data-partido-id="{{ partido.id }}"
+                              data-pendiente-confirmacion="true"
+                              title="Este partido está pendiente de confirmación por el organizador"
+                            >
+                              <i class="bi bi-lock me-2"></i>Esperando Confirmación
+                            </button>
+                          {% else %}
+                            <a 
+                              href="{% url 'arbitros:arbitrar_partido' partido.id %}" 
+                              class="btn btn-arbitro w-100 btn-arbitro-enabled"
+                              data-partido-id="{{ partido.id }}"
+                              data-pendiente-confirmacion="false"
+                            >
+                              <i class="bi bi-play-circle me-2"></i>Arbitrar Partido
+                            </a>
+                          {% endif %}
+                        </div>
+                      </div>
+                    </div>
+                  {% endfor %}
+                </div>
+              {% else %}
+                <div class="text-center py-5">
+                  <i class="bi bi-calendar-x text-muted" style="font-size: 4rem;"></i>
+                  <h4 class="text-muted mt-3">No tienes partidos asignados</h4>
+                  <p class="text-muted">Los organizadores te asignarán partidos cuando sea necesario.</p>
+                </div>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script>
+    // **NUEVO: Sistema de polling para partidos asignados en tiempo real**
+    let partidosActuales = [{% for partido in partidos %}{{ partido.id }}{% if not forloop.last %},{% endif %}{% endfor %}];
+    let totalPartidosActual = {{ partidos|length }};
+    let partidosPendientesActuales = [{% for partido in partidos %}{% if partido.pendiente_confirmacion %}{{ partido.id }}{% if not forloop.last %},{% endif %}{% endif %}{% endfor %}];
+    
+    function actualizarEstadoBotones(partidosPendientes) {
+        // Actualizar todos los botones según el estado de confirmación
+        const cards = document.querySelectorAll('[data-partido-id]');
+        
+        cards.forEach(card => {
+            const partidoId = parseInt(card.getAttribute('data-partido-id'));
+            const estaPendiente = partidosPendientes.includes(partidoId);
+            
+            // Si es un botón/enlace de arbitrar
+            if (card.classList.contains('btn-arbitro-enabled') || card.classList.contains('btn-arbitro-disabled')) {
+                const cardFooter = card.parentElement;
+                const alertDiv = cardFooter.querySelector('.alert-warning');
+                
+                if (estaPendiente && !card.classList.contains('btn-arbitro-disabled')) {
+                    // Cambiar a estado pendiente
+                    console.log(`Partido ${partidoId}: Cambiando a pendiente de confirmación`);
+                    
+                    // Crear alerta si no existe
+                    if (!alertDiv) {
+                        const newAlert = document.createElement('div');
+                        newAlert.className = 'alert alert-warning py-2 mb-2';
+                        newAlert.innerHTML = `
+                            <i class="bi bi-hourglass-split me-2"></i>
+                            <small><strong>Partido pendiente de confirmación</strong></small>
+                        `;
+                        cardFooter.insertBefore(newAlert, card);
+                    }
+                    
+                    // Convertir enlace a botón deshabilitado
+                    const newButton = document.createElement('button');
+                    newButton.className = 'btn btn-secondary w-100 btn-arbitro-disabled';
+                    newButton.disabled = true;
+                    newButton.setAttribute('data-partido-id', partidoId);
+                    newButton.setAttribute('data-pendiente-confirmacion', 'true');
+                    newButton.title = 'Este partido está pendiente de confirmación por el organizador';
+                    newButton.innerHTML = '<i class="bi bi-lock me-2"></i>Esperando Confirmación';
+                    
+                    card.parentElement.replaceChild(newButton, card);
+                    
+                } else if (!estaPendiente && card.classList.contains('btn-arbitro-disabled')) {
+                    // Cambiar a estado normal
+                    console.log(`Partido ${partidoId}: Cambiando a disponible para arbitrar`);
+                    
+                    // Eliminar alerta si existe
+                    if (alertDiv) {
+                        alertDiv.remove();
+                    }
+                    
+                    // Convertir botón deshabilitado a enlace
+                    const newLink = document.createElement('a');
+                    newLink.href = `/arbitros/arbitrar/${partidoId}/`;  // URL del arbitrar_partido
+                    newLink.className = 'btn btn-arbitro w-100 btn-arbitro-enabled';
+                    newLink.setAttribute('data-partido-id', partidoId);
+                    newLink.setAttribute('data-pendiente-confirmacion', 'false');
+                    newLink.innerHTML = '<i class="bi bi-play-circle me-2"></i>Arbitrar Partido';
+                    
+                    card.parentElement.replaceChild(newLink, card);
+                }
+            }
+        });
+    }
+    
+    function verificarPartidosEnTiempoReal() {
+        fetch('{% url "arbitros:verificar_partidos_ajax" %}')
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    console.error('Error verificando partidos:', data.error);
+                    return;
+                }
+                
+                // Verificar si cambió el número de partidos
+                if (data.total_partidos !== totalPartidosActual) {
+                    console.log(`Cambio detectado: ${totalPartidosActual} -> ${data.total_partidos} partidos`);
+                    // Recargar la página para mostrar cambios
+                    location.reload();
+                    return;
+                }
+                
+                // Verificar si cambiaron los IDs de partidos (algunos se finalizaron)
+                const partidosNuevos = data.partidos_ids.sort();
+                const partidosViejos = partidosActuales.sort();
+                
+                if (JSON.stringify(partidosNuevos) !== JSON.stringify(partidosViejos)) {
+                    console.log('Partidos finalizados o nuevos asignados detectados');
+                    // Recargar la página para mostrar cambios
+                    location.reload();
+                    return;
+                }
+                
+                // Verificar si cambió el estado de confirmación de partidos
+                const pendientesNuevos = data.partidos_pendientes_confirmacion.sort();
+                const pendientesViejos = partidosPendientesActuales.sort();
+                
+                if (JSON.stringify(pendientesNuevos) !== JSON.stringify(pendientesViejos)) {
+                    console.log('Cambio en estado de confirmación detectado');
+                    console.log('Pendientes anteriores:', pendientesViejos);
+                    console.log('Pendientes nuevos:', pendientesNuevos);
+                    
+                    // Actualizar botones sin recargar la página
+                    actualizarEstadoBotones(pendientesNuevos);
+                    partidosPendientesActuales = pendientesNuevos;
+                }
+            })
+            .catch(error => {
+                console.error('Error verificando partidos en tiempo real:', error);
+            });
+    }
+    
+    // Agregar indicador visual de actualización en tiempo real
+    const container = document.querySelector('.arbitro-card .p-4');
+    const statusDiv = document.createElement('div');
+    statusDiv.className = 'alert alert-info py-2 mb-3';
+    statusDiv.innerHTML = `
+        <i class="bi bi-arrow-clockwise"></i> 
+        <strong>Actualización automática:</strong> 
+        <span id="status-text">Verificando nuevos partidos...</span>
+        <small class="text-muted">| Cada 5 segundos</small>
+    `;
+    container.insertBefore(statusDiv, container.children[1]);
+    
+    // Verificar cada 5 segundos
+    setInterval(verificarPartidosEnTiempoReal, 5000);
+    
+    // Actualizar estado visual
+    let verificacionCount = 0;
+    setInterval(() => {
+        verificacionCount++;
+        const statusText = document.getElementById('status-text');
+        if (statusText) {
+            statusText.textContent = `Última verificación: ${new Date().toLocaleTimeString()} (${verificacionCount})`;
+        }
+    }, 5000);
+    </script>
+  </body>
+</html>

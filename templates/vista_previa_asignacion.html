@@ -400,7 +400,7 @@
           <p class="text-muted">Esto puede tomar unos segundos...</p>
         </div>`;
 
-      fetch(`/torneos/{{ torneo.id }}/vista-previa-asignacion/`)
+      fetch(`/torneos/{{ torneo.id }}/vista-previa-asignacion/?format=json`)
         .then(response => {
           if (!response.ok) {
             throw new Error(`Error HTTP: ${response.status} - ${response.statusText}`);

@@ -1,0 +1,271 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="container">
+    <h2>Organizar Llaves - {{ torneo.nombre }}</h2>
+    
+    {% if messages %}
+      {% for message in messages %}
+        <div class="alert alert-success alert-dismissible fade show" role="alert">
+          {{ message }}
+          <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+      {% endfor %}
+    {% endif %}
+    
+    <hr>
+    
+    <!-- Información del torneo -->
+    <div class="row mb-4">
+      <div class="col-md-8">
+        <div class="card border-success">
+          <div class="card-header bg-success text-white">
+            <h5 class="mb-0"><i class="fas fa-info-circle"></i> Información del Torneo</h5>
+          </div>
+          <div class="card-body">
+            <div class="row">
+              <div class="col-md-6">
+                <p><strong>Modalidad:</strong> Eliminación Directa (Llaves)</p>
+                <p><strong>Participantes:</strong> {{ num_participantes }} jugadores</p>
+                <p><strong>Rondas:</strong> {{ rondas_necesarias }} rondas necesarias</p>
+              </div>
+              <div class="col-md-6">
+                <p><strong>BYE necesarias:</strong> 
+                  {% if es_bracket_perfecto %}
+                    No necesita (bracket perfecto)
+                  {% else %}
+                    {{ byes_necesarias }} BYE
+                  {% endif %}
+                </p>
+                <p><strong>Bracket total:</strong> {{ potencia_2_siguiente }} posiciones</p>
+                <p><strong>Estado:</strong> <span class="badge bg-success">Torneo Iniciado</span></p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="col-md-4">
+        <div class="card border-warning">
+          <div class="card-header bg-warning text-dark">
+            <h6 class="mb-0"><i class="fas fa-lightbulb"></i> Opciones de Asignación</h6>
+          </div>
+          <div class="card-body">
+            <form method="post">
+              {% csrf_token %}
+              <button type="submit" name="definir_llaves_manual" class="btn btn-primary w-100 mb-2">
+                <i class="fas fa-crown"></i> Definir Llaves
+              </button>
+              <button type="submit" name="asignar_automatico" class="btn btn-success w-100"
+                      onclick="return confirm('¿Asignar llaves automáticamente? Esto mezclará a todos los jugadores aleatoriamente.');">
+                <i class="fas fa-random"></i> Asignación Automática
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sección de Gestión de Árbitros -->
+    <div class="row mb-4">
+      <div class="col-12">
+        <div class="card border-warning">
+          <div class="card-header bg-warning text-dark">
+            <h5 class="mb-0"><i class="fas fa-user-tie"></i> Gestión de Árbitros del Torneo</h5>
+          </div>
+          <div class="card-body">
+            <p class="text-muted mb-4">Asigna árbitros que estarán disponibles para este torneo</p>
+            
+            <!-- Formulario de búsqueda de árbitros -->
+            <div class="mb-4">
+              <h6 class="mb-3"><i class="fas fa-search"></i> Buscar y Agregar Árbitros</h6>
+              <form method="post">
+                {% csrf_token %}
+                <div class="row g-3 align-items-end">
+                  <div class="col-md-6">
+                    <label for="buscarArbitro" class="form-label">Buscar por correo, nombre o apellido</label>
+                    <input type="text" name="buscar_arbitro" class="form-control" 
+                           id="buscarArbitro" placeholder="Escribe correo, nombre o apellido...">
+                  </div>
+                  <div class="col-md-3">
+                    <button type="submit" name="buscar_arbitros" class="btn btn-primary w-100">
+                      <i class="fas fa-search me-1"></i>Buscar Árbitros
+                    </button>
+                  </div>
+                  <div class="col-md-3">
+                    <button type="submit" name="mostrar_todos_arbitros" class="btn btn-outline-primary w-100">
+                      <i class="fas fa-users me-1"></i>Mostrar Todos
+                    </button>
+                  </div>
+                </div>
+              </form>
+            </div>
+
+            <!-- Resultados de búsqueda de árbitros disponibles -->
+            {% if arbitros_disponibles %}
+            <div class="mb-4">
+              <h6 class="mb-3 text-primary"><i class="fas fa-user-plus"></i> Árbitros Disponibles para Agregar</h6>
+              <div class="row">
+                {% for arbitro in arbitros_disponibles %}
+                <div class="col-md-6 col-lg-4 mb-3">
+                  <div class="card border-primary">
+                    <div class="card-body">
+                      <h6 class="card-title">{{ arbitro.first_name }} {{ arbitro.last_name }}</h6>
+                      <p class="card-text text-muted">{{ arbitro.email }}</p>
+                      <span class="badge bg-info mb-2">Árbitro</span>
+                      <form method="post" class="d-grid">
+                        {% csrf_token %}
+                        <input type="hidden" name="arbitro_id" value="{{ arbitro.id }}">
+                        <button type="submit" name="agregar_arbitro" class="btn btn-success btn-sm">
+                          <i class="fas fa-plus me-1"></i>Agregar al Torneo
+                        </button>
+                      </form>
+                    </div>
+                  </div>
+                </div>
+                {% endfor %}
+              </div>
+            </div>
+            {% endif %}
+
+            <!-- Árbitros asignados al torneo -->
+            <div>
+              <h6 class="mb-3 text-success">
+                <i class="fas fa-check-circle"></i> Árbitros Asignados al Torneo 
+                <span class="badge bg-success">{{ arbitros_torneo|length }}</span>
+              </h6>
+              
+              {% if arbitros_torneo %}
+              <div class="row">
+                {% for arbitro in arbitros_torneo %}
+                <div class="col-md-6 col-lg-4 mb-3">
+                  <div class="card border-success">
+                    <div class="card-body">
+                      <h6 class="card-title">{{ arbitro.first_name }} {{ arbitro.last_name }}</h6>
+                      <p class="card-text text-muted">{{ arbitro.email }}</p>
+                      <span class="badge bg-success mb-2">Asignado</span>
+                      <form method="post" class="d-grid">
+                        {% csrf_token %}
+                        <input type="hidden" name="arbitro_id" value="{{ arbitro.id }}">
+                        <button type="submit" name="remover_arbitro" class="btn btn-danger btn-sm"
+                                onclick="return confirm('¿Estás seguro de remover este árbitro del torneo?');">
+                          <i class="fas fa-times me-1"></i>Remover del Torneo
+                        </button>
+                      </form>
+                    </div>
+                  </div>
+                </div>
+                {% endfor %}
+              </div>
+              {% else %}
+              <div class="card border-secondary">
+                <div class="card-body text-center">
+                  <i class="fas fa-user-tie fs-1 text-muted mb-3"></i>
+                  <h6 class="text-muted">No hay árbitros asignados</h6>
+                  <p class="text-muted">Busca y agrega árbitros para este torneo usando el formulario de arriba.</p>
+                </div>
+              </div>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mostrar llaves asignadas o participantes sin asignar -->
+    {% if llaves_asignadas %}
+      <div class="card">
+        <div class="card-header bg-info text-white">
+          <h5 class="mb-0"><i class="fas fa-trophy"></i> Llaves Asignadas - Primera Ronda</h5>
+        </div>
+        <div class="card-body">
+          <div class="row">
+            {% for llave in llaves_primera_ronda %}
+              <div class="col-md-6 col-lg-4 mb-3">
+                <div class="card border-primary">
+                  <div class="card-header bg-primary text-white text-center">
+                    <small><strong>Enfrentamiento {{ llave.posicion }}</strong></small>
+                  </div>
+                  <div class="card-body p-2">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                      <span class="fw-bold">{{ llave.jugador1_nombre }}</span>
+                      <span class="badge {{ llave.estado_badge_class }}">{{ llave.get_estado_partido_display }}</span>
+                    </div>
+                    <div class="text-center text-muted my-1">
+                      <small><strong>VS</strong></small>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center">
+                      <span class="fw-bold">{{ llave.jugador2_nombre }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+          
+          <div class="text-center mt-3">
+            <p class="text-success"><i class="fas fa-check-circle"></i> Las llaves han sido asignadas correctamente.</p>
+            <div class="btn-group" role="group">
+              <form method="post" style="display: inline;">
+                {% csrf_token %}
+                <button type="submit" name="reconfigurar_llaves" class="btn btn-warning" 
+                        onclick="return confirm('¿Reconfigurar las llaves? Esto eliminará la asignación actual y permitirá una nueva.');">
+                  <i class="fas fa-redo"></i> Reconfigurar Llaves
+                </button>
+              </form>
+              <a href="{% url 'iniciar_partidos' torneo.id %}" class="btn btn-success"
+                 onclick="return confirm('¿Estás seguro de iniciar los partidos? Una vez iniciados, no podrás cambiar las asignaciones de llaves.');">
+                <i class="fas fa-play"></i> Iniciar Partidos
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+    {% else %}
+      <div class="card">
+        <div class="card-header bg-light">
+          <h5 class="mb-0"><i class="fas fa-list"></i> Participantes del Torneo</h5>
+        </div>
+        <div class="card-body">
+          <div class="row">
+            {% for participacion in participantes %}
+              <div class="col-md-6 col-lg-4 mb-2">
+                <div class="card border-light">
+                  <div class="card-body p-2">
+                    <div class="d-flex justify-content-between">
+                      <span>{{ participacion.jugador.nombre }} {{ participacion.jugador.apellido }}</span>
+                      <small class="text-muted">{{ participacion.jugador.calcular_categoria }}</small>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+          
+          <div class="text-center mt-3">
+            <p class="text-muted">Los participantes aún no han sido asignados a las llaves. Usa las opciones de arriba para organizarlos.</p>
+          </div>
+        </div>
+      </div>
+    {% endif %}
+    
+    <!-- Botones de navegación -->
+    <div class="text-center mt-4">
+      <a href="{% url 'lista_torneos' %}" class="btn btn-secondary">
+        <i class="fas fa-arrow-left"></i> Volver a Mis Torneos
+      </a>
+    </div>
+  </div>
+
+  <style>
+    .btn-purple {
+      background-color: #6f42c1;
+      border-color: #6f42c1;
+      color: white;
+    }
+    .btn-purple:hover {
+      background-color: #5a359a;
+      border-color: #5a359a;
+      color: white;
+    }
+  </style>
+{% endblock %}

@@ -1,0 +1,373 @@
+{% load static %}
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AutoTenis - Panel Árbitro</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+      body {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      }
+      .arbitro-card {
+        background: rgba(255, 255, 255, 0.95);
+        border-radius: 20px;
+        box-shadow: 0 8px 32px rgba(31, 38, 135, 0.37);
+        backdrop-filter: blur(4px);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+      }
+      .header-arbitro {
+        background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+        color: white;
+        border-radius: 20px 20px 0 0;
+        padding: 1.5rem;
+      }
+      .stats-card {
+        background: rgba(255, 255, 255, 0.9);
+        border-radius: 15px;
+        border: none;
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+        min-height: 140px;
+      }
+      .stats-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+      }
+      .btn-arbitro {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border: none;
+        border-radius: 12px;
+        padding: 12px 24px;
+        color: white;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        font-size: 0.9rem;
+        text-decoration: none;
+      }
+      .btn-arbitro:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+        color: white;
+      }
+      .status-badge {
+        background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        color: white;
+        border-radius: 20px;
+        padding: 6px 12px;
+        font-size: 0.8rem;
+        font-weight: 600;
+      }
+      .quick-action {
+        background: rgba(255, 255, 255, 0.1);
+        border: 2px solid rgba(255, 255, 255, 0.2);
+        border-radius: 12px;
+        color: white;
+        transition: all 0.3s ease;
+        padding: 8px 16px;
+        font-size: 0.9rem;
+      }
+      .quick-action:hover {
+        background: rgba(255, 255, 255, 0.2);
+        border-color: rgba(255, 255, 255, 0.4);
+        color: white;
+      }
+      
+      /* Responsive adjustments */
+      @media (max-width: 768px) {
+        .container-fluid {
+          padding: 1rem !important;
+        }
+        .header-arbitro {
+          padding: 1rem;
+          text-align: center;
+        }
+        .header-arbitro h1 {
+          font-size: 1.5rem;
+          margin-bottom: 0.5rem;
+        }
+        .stats-card {
+          min-height: 120px;
+          margin-bottom: 1rem;
+        }
+        .stats-card .card-body {
+          padding: 1rem;
+        }
+        .stats-card i {
+          font-size: 2rem !important;
+        }
+        .stats-card h3 {
+          font-size: 1.5rem;
+        }
+        .btn-arbitro {
+          padding: 10px 20px;
+          font-size: 0.85rem;
+        }
+        .quick-action {
+          padding: 6px 12px;
+          font-size: 0.8rem;
+          margin-bottom: 0.5rem;
+        }
+        .alert {
+          font-size: 0.9rem;
+        }
+        .arbitro-card {
+          border-radius: 15px;
+        }
+        .header-arbitro {
+          border-radius: 15px 15px 0 0;
+        }
+      }
+      
+      @media (max-width: 576px) {
+        .header-arbitro h1 {
+          font-size: 1.3rem;
+        }
+        .header-arbitro p {
+          font-size: 0.9rem;
+        }
+        .status-badge {
+          font-size: 0.75rem;
+          padding: 4px 8px;
+        }
+        .stats-card i {
+          font-size: 1.8rem !important;
+        }
+        .stats-card h3 {
+          font-size: 1.3rem;
+        }
+        .stats-card p {
+          font-size: 0.8rem;
+        }
+        .btn-arbitro {
+          padding: 8px 16px;
+          font-size: 0.8rem;
+        }
+        .quick-action {
+          padding: 6px 10px;
+          font-size: 0.75rem;
+        }
+        .card-title {
+          font-size: 1rem;
+        }
+        .card-text {
+          font-size: 0.85rem;
+        }
+      }
+      
+      /* Touch-friendly adjustments */
+      @media (hover: none) and (pointer: coarse) {
+        .stats-card:hover {
+          transform: none;
+        }
+        .btn-arbitro:hover {
+          transform: none;
+        }
+        .quick-action:hover {
+          background: rgba(255, 255, 255, 0.1);
+          border-color: rgba(255, 255, 255, 0.2);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container-fluid p-2 p-md-4">
+      <div class="row justify-content-center">
+        <div class="col-12 col-lg-10">
+          <!-- Header Card -->
+          <div class="arbitro-card mb-3 mb-md-4">
+            <div class="header-arbitro">
+              <div class="row align-items-center">
+                <div class="col-12 col-md-8 mb-3 mb-md-0">
+                  <h1 class="mb-2">
+                    <i class="bi bi-person-badge me-2 me-md-3"></i>
+                    Panel de Árbitro
+                  </h1>
+                  <p class="mb-2 opacity-90">
+                    Bienvenido, {{ user.first_name }} {{ user.last_name }}
+                  </p>
+                  <span class="status-badge d-inline-block">
+                    <i class="bi bi-circle-fill me-1"></i>
+                    Activo
+                  </span>
+                </div>
+                <div class="col-12 col-md-4 text-center text-md-end">
+                  <div class="d-flex flex-row flex-md-column gap-2 justify-content-center justify-content-md-end">
+                    <button class="btn quick-action flex-fill flex-md-grow-0">
+                      <i class="bi bi-gear"></i>
+                      <span class="d-none d-sm-inline ms-1 ms-md-2">Configuración</span>
+                    </button>
+                    <form method="post" action="{% url 'logout' %}" style="margin: 0;" class="flex-fill flex-md-grow-0">
+                      {% csrf_token %}
+                      <button type="submit" class="btn quick-action w-100">
+                        <i class="bi bi-box-arrow-right"></i>
+                        <span class="d-none d-sm-inline ms-1 ms-md-2">Salir</span>
+                      </button>
+                    </form>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Stats Section -->
+            <div class="p-3 p-md-4">
+              <div class="row g-3 g-md-4 mb-3 mb-md-4">
+                <div class="col-6 col-md-3">
+                  <div class="card stats-card h-100">
+                    <div class="card-body text-center d-flex flex-column justify-content-center">
+                      <i class="bi bi-trophy-fill text-warning fs-1 mb-2"></i>
+                      <h3 class="card-title text-primary mb-1">{{ partidos_asignados }}</h3>
+                      <p class="card-text text-muted mb-0 small">Partidos Asignados</p>
+                    </div>
+                  </div>
+                </div>
+                <div class="col-6 col-md-3">
+                  <div class="card stats-card h-100">
+                    <div class="card-body text-center d-flex flex-column justify-content-center">
+                      <i class="bi bi-check-circle-fill text-success fs-1 mb-2"></i>
+                      <h3 class="card-title text-primary mb-1">{{ partidos_completados }}</h3>
+                      <p class="card-text text-muted mb-0 small">Partidos Completados</p>
+                    </div>
+                  </div>
+                </div>
+                <div class="col-6 col-md-3">
+                  <div class="card stats-card h-100">
+                    <div class="card-body text-center d-flex flex-column justify-content-center">
+                      <i class="bi bi-clock-fill text-info fs-1 mb-2"></i>
+                      <h3 class="card-title text-primary mb-1">{{ partidos_pendientes }}</h3>
+                      <p class="card-text text-muted mb-0 small">Partidos Pendientes</p>
+                    </div>
+                  </div>
+                </div>
+                <div class="col-6 col-md-3">
+                  <div class="card stats-card h-100">
+                    <div class="card-body text-center d-flex flex-column justify-content-center">
+                      <i class="bi bi-calendar-event-fill text-danger fs-1 mb-2"></i>
+                      <h3 class="card-title text-primary mb-1">{{ torneos_activos }}</h3>
+                      <p class="card-text text-muted mb-0 small">Torneos Activos</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Quick Actions -->
+              <div class="row g-3 g-md-4 mb-3 mb-md-4">
+                <div class="col-12 col-lg-6">
+                  <div class="card stats-card h-100">
+                    <div class="card-body d-flex flex-column">
+                      <h5 class="card-title">
+                        <i class="bi bi-list-check text-primary me-2"></i>
+                        Partidos por Arbitrar
+                      </h5>
+                      <p class="card-text text-muted flex-grow-1">
+                        Revisa y gestiona los partidos que tienes asignados
+                      </p>
+                      <a href="{% url 'arbitros:partidos_asignados' %}" class="btn btn-arbitro w-100">
+                        <i class="bi bi-eye me-2"></i>
+                        Ver Partidos Asignados
+                      </a>
+                    </div>
+                  </div>
+                </div>
+                <div class="col-12 col-lg-6">
+                  <div class="card stats-card h-100">
+                    <div class="card-body d-flex flex-column">
+                      <h5 class="card-title">
+                        <i class="bi bi-file-earmark-text text-primary me-2"></i>
+                        Historial de Arbitrajes
+                      </h5>
+                      <p class="card-text text-muted flex-grow-1">
+                        Consulta tu historial completo de partidos arbitrados
+                      </p>
+                      <a href="{% url 'arbitros:historial' %}" class="btn btn-arbitro w-100">
+                        <i class="bi bi-clock-history me-2"></i>
+                        Ver Historial
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Current Status -->
+              <div class="row">
+                <div class="col-12">
+                  <div class="card stats-card">
+                    <div class="card-body">
+                      <h5 class="card-title">
+                        <i class="bi bi-info-circle text-primary me-2"></i>
+                        Estado Actual
+                      </h5>
+                      {% if partidos_asignados > 0 %}
+                        <div class="alert alert-success d-flex align-items-start" role="alert">
+                          <i class="bi bi-check-circle-fill me-3 fs-4 flex-shrink-0 mt-1"></i>
+                          <div>
+                            <strong>¡Tienes partidos asignados!</strong><br>
+                            Actualmente tienes {{ partidos_pendientes }} partido{{ partidos_pendientes|pluralize }} pendiente{{ partidos_pendientes|pluralize }} por arbitrar.
+                            Puedes revisar los detalles y programación en la sección de "Partidos por Arbitrar".
+                          </div>
+                        </div>
+                      {% else %}
+                        <div class="alert alert-info d-flex align-items-start" role="alert">
+                          <i class="bi bi-lightbulb-fill me-3 fs-4 flex-shrink-0 mt-1"></i>
+                          <div>
+                            <strong>¡Bienvenido al panel de árbitro!</strong><br>
+                            Actualmente no tienes partidos asignados. Los organizadores de torneos podrán asignarte partidos para arbitrar.
+                            Cuando esto ocurra, aparecerán aquí con toda la información necesaria.
+                          </div>
+                        </div>
+                      {% endif %}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="text-center text-white py-3 mt-4">
+      <div class="container">
+        <p class="mb-0 opacity-75">&copy; 2025 AutoTenis. Todos los derechos reservados.</p>
+      </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script>
+    // **NUEVO: Actualización en tiempo real del panel de árbitro**
+    let partidosPendientesActual = {{ partidos_pendientes }};
+    let partidosCompletadosActual = {{ partidos_completados }};
+    
+    function actualizarEstadisticasPanel() {
+        fetch('{% url "arbitros:verificar_partidos_ajax" %}')
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    console.error('Error actualizando panel:', data.error);
+                    return;
+                }
+                
+                // Si cambió el número de partidos, recargar para actualizar estadísticas
+                const nuevosPendientes = data.total_partidos;
+                
+                if (nuevosPendientes !== partidosPendientesActual) {
+                    console.log(`Partidos pendientes cambiaron: ${partidosPendientesActual} -> ${nuevosPendientes}`);
+                    // Recargar la página para actualizar todas las estadísticas
+                    location.reload();
+                }
+            })
+            .catch(error => {
+                console.error('Error verificando estadísticas del panel:', error);
+            });
+    }
+    
+    // Verificar cada 8 segundos (menos frecuente que la página de partidos)
+    setInterval(actualizarEstadisticasPanel, 8000);
+    </script>
+  </body>
+</html>

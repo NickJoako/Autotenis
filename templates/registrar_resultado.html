@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% load static %}
+{% load resultado_extras %}
 {% block content %}
 <style>
     /* Estilos para campos bloqueados (guardados) */
@@ -34,7 +35,7 @@
         background-color: rgba(40, 167, 69, 0.08);
         border-left: 4px solid #28a745;
         padding-left: 15px;
-        border-radius: 0.375rem;
+        bor der-radius: 0.375rem;
         transition: all 0.3s ease;
     }
     
@@ -142,11 +143,60 @@
     #btnGuardarResultado {
         transition: all 0.3s ease;
     }
+    
+    /* Estilos para sets bloqueados */
+    .set-bloqueado {
+        background-color: rgba(108, 117, 125, 0.1) !important;
+        border-left: 4px solid #6c757d !important;
+        transition: all 0.3s ease;
+    }
+    
+    .set-bloqueado .form-control {
+        background-color: #f8f9fa !important;
+        border-color: #dee2e6 !important;
+        color: #6c757d !important;
+        cursor: not-allowed;
+    }
+    
+    .set-bloqueado .form-label {
+        color: #6c757d !important;
+    }
+    
+    .mensaje-bloqueo {
+        animation: fade-in 0.3s ease;
+    }
+    
+    @keyframes fade-in {
+        from { opacity: 0; transform: translateY(-5px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    
+    /* Alerta temporal para sets bloqueados */
+    .alert-sm {
+        padding: 0.5rem 0.75rem;
+        font-size: 0.875rem;
+        border-radius: 0.25rem;
+        animation: slide-down 0.3s ease;
+    }
+    
+    @keyframes slide-down {
+        from { opacity: 0; transform: translateY(-10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
 </style>
 
 <div class="container">
     <h2>Registrar Resultado</h2>
     <h4 class="text-muted mb-4">{{ torneo.nombre }}</h4>
+    
+    <!-- Alerta especial para partidos finales -->
+    {% if es_partido_final %}
+        <div class="alert alert-warning alert-dismissible fade show" role="alert">
+            <h5><i class="fas fa-trophy"></i> <strong>¡PARTIDO FINAL!</strong></h5>
+            <p class="mb-0">Este partido se juega con modalidad <strong>{{ torneo.get_mejor_de_sets_final_display }}</strong> (se necesitan <strong>{{ sets_para_ganar }} sets</strong> para ganar).</p>
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    {% endif %}
     
     <!-- Mensajes de estado -->
     {% if messages %}
@@ -183,39 +233,48 @@
             
             <div class="row">
                 <div class="col-md-6">
-                    <p><strong>Modalidad:</strong> {{ torneo.get_mejor_de_sets_display }}</p>
+                    {% if es_partido_final %}
+                        <p><strong>Modalidad:</strong> <span class="badge bg-danger">FINAL</span> {{ torneo.get_mejor_de_sets_final_display }}</p>
+                    {% else %}
+                        <p><strong>Modalidad:</strong> {{ torneo.get_mejor_de_sets_display }}</p>
+                    {% endif %}
                     <p><strong>Sets para ganar:</strong> {{ sets_para_ganar }}</p>
                 </div>
                 <div class="col-md-6">
                     <p><strong>Llave:</strong> {{ partido.llave_torneo.posicion }}</p>
-                    <p><strong>Ronda:</strong> {{ partido.llave_torneo.ronda }}</p>
+                    <p><strong>Ronda:</strong> {{ partido.llave_torneo.ronda }}
+                        {% if es_partido_final %}
+                            <span class="badge bg-warning text-dark ms-2">FINAL</span>
+                        {% endif %}
+                    </p>
                 </div>
             </div>
         </div>
     </div>
 
     <!-- Mensaje informativo sobre sets guardados -->
-    {% if sets_guardados.set1 or sets_guardados.set2 or sets_guardados.set3 or sets_guardados.set4 or sets_guardados.set5 %}
+    {% if sets_guardados|has_guardados:sets %}
     <div class="set-guardado-info">
         <i class="fas fa-info-circle"></i>
         <strong>Sets guardados:</strong>
         Los siguientes sets ya están guardados y no pueden modificarse:
         <ul class="mb-0 mt-2">
-            {% if sets_guardados.set1 %}
-            <li><i class="fas fa-lock"></i> Set 1: {{ resultado.set1_jugador1 }}-{{ resultado.set1_jugador2 }}</li>
-            {% endif %}
-            {% if sets_guardados.set2 %}
-            <li><i class="fas fa-lock"></i> Set 2: {{ resultado.set2_jugador1 }}-{{ resultado.set2_jugador2 }}</li>
-            {% endif %}
-            {% if sets_guardados.set3 %}
-            <li><i class="fas fa-lock"></i> Set 3: {{ resultado.set3_jugador1 }}-{{ resultado.set3_jugador2 }}</li>
-            {% endif %}
-            {% if sets_guardados.set4 %}
-            <li><i class="fas fa-lock"></i> Set 4: {{ resultado.set4_jugador1 }}-{{ resultado.set4_jugador2 }}</li>
-            {% endif %}
-            {% if sets_guardados.set5 %}
-            <li><i class="fas fa-lock"></i> Set 5: {{ resultado.set5_jugador1 }}-{{ resultado.set5_jugador2 }}</li>
-            {% endif %}
+            {% for set_num in sets %}
+                {% if sets_guardados|get_guardado:set_num %}
+                <li><i class="fas fa-lock"></i> Set {{ set_num }}: 
+                {% if set_num == 1 %}{{ resultado.set1_jugador1|default:0 }}-{{ resultado.set1_jugador2|default:0 }}
+                {% elif set_num == 2 %}{{ resultado.set2_jugador1|default:0 }}-{{ resultado.set2_jugador2|default:0 }}
+                {% elif set_num == 3 %}{{ resultado.set3_jugador1|default:0 }}-{{ resultado.set3_jugador2|default:0 }}
+                {% elif set_num == 4 %}{{ resultado.set4_jugador1|default:0 }}-{{ resultado.set4_jugador2|default:0 }}
+                {% elif set_num == 5 %}{{ resultado.set5_jugador1|default:0 }}-{{ resultado.set5_jugador2|default:0 }}
+                {% elif set_num == 6 %}{{ resultado.set6_jugador1|default:0 }}-{{ resultado.set6_jugador2|default:0 }}
+                {% elif set_num == 7 %}{{ resultado.set7_jugador1|default:0 }}-{{ resultado.set7_jugador2|default:0 }}
+                {% elif set_num == 8 %}{{ resultado.set8_jugador1|default:0 }}-{{ resultado.set8_jugador2|default:0 }}
+                {% elif set_num == 9 %}{{ resultado.set9_jugador1|default:0 }}-{{ resultado.set9_jugador2|default:0 }}
+                {% endif %}
+                </li>
+                {% endif %}
+            {% endfor %}
         </ul>
     </div>
     {% endif %}
@@ -239,172 +298,44 @@
                     </div>
                 </div>
                 
-                <!-- Sets obligatorios (1, 2, 3) -->
-                <div class="row mb-3{% if sets_guardados.set1 %} input-locked{% endif %}">
-                    <div class="col-md-2">
-                        <label class="form-label fw-bold">
-                            Set 1:
-                            {% if sets_guardados.set1 %}
-                                <i class="fas fa-lock text-success ms-1" title="Set guardado, no se puede modificar"></i>
-                            {% endif %}
-                        </label>
+                <!-- Sets dinámicos según el torneo -->
+                {% for set_num in sets %}
+                    <div class="row mb-3{% if sets_guardados|get_guardado:set_num %} input-locked{% endif %}">
+                        <div class="col-md-2">
+                            <label class="form-label fw-bold">
+                                Set {{ set_num }}:
+                                {% if sets_guardados|get_guardado:set_num %}
+                                    <i class="fas fa-lock text-success ms-1" title="Set guardado, no se puede modificar"></i>
+                                {% endif %}
+                            </label>
+                        </div>
+                        <div class="col-md-4">
+                            <input type="number"
+                                   class="form-control text-center{% if sets_guardados|get_guardado:set_num %} form-control-readonly{% endif %}"
+                                   id="set{{ set_num }}_jugador1_{{ set_num }}"
+                                   name="set{{ set_num }}_jugador1"
+                                   value="{% if set_num == 1 %}{{ resultado.set1_jugador1|default:'0' }}{% elif set_num == 2 %}{{ resultado.set2_jugador1|default:'0' }}{% elif set_num == 3 %}{{ resultado.set3_jugador1|default:'0' }}{% elif set_num == 4 %}{{ resultado.set4_jugador1|default:'0' }}{% elif set_num == 5 %}{{ resultado.set5_jugador1|default:'0' }}{% elif set_num == 6 %}{{ resultado.set6_jugador1|default:'0' }}{% elif set_num == 7 %}{{ resultado.set7_jugador1|default:'0' }}{% elif set_num == 8 %}{{ resultado.set8_jugador1|default:'0' }}{% elif set_num == 9 %}{{ resultado.set9_jugador1|default:'0' }}{% endif %}"
+                                   min="0"
+                                   placeholder="0"
+                                   {% if sets_guardados|get_guardado:set_num %}readonly title="Este set ya está guardado y no se puede modificar"{% else %}{% if set_num <= 3 %}required{% endif %}{% endif %}>
+                        </div>
+                        <div class="col-md-2 text-center">
+                            <span class="fs-4">-</span>
+                        </div>
+                        <div class="col-md-4">
+                            <input type="number"
+                                   class="form-control text-center{% if sets_guardados|get_guardado:set_num %} form-control-readonly{% endif %}"
+                                   id="set{{ set_num }}_jugador2_{{ set_num }}"
+                                   name="set{{ set_num }}_jugador2"
+                                   {% if sets_guardados|get_guardado:set_num %}readonly title="Este set ya está guardado y no se puede modificar"{% endif %}
+                                   value="{% if set_num == 1 %}{{ resultado.set1_jugador2|default:'0' }}{% elif set_num == 2 %}{{ resultado.set2_jugador2|default:'0' }}{% elif set_num == 3 %}{{ resultado.set3_jugador2|default:'0' }}{% elif set_num == 4 %}{{ resultado.set4_jugador2|default:'0' }}{% elif set_num == 5 %}{{ resultado.set5_jugador2|default:'0' }}{% elif set_num == 6 %}{{ resultado.set6_jugador2|default:'0' }}{% elif set_num == 7 %}{{ resultado.set7_jugador2|default:'0' }}{% elif set_num == 8 %}{{ resultado.set8_jugador2|default:'0' }}{% elif set_num == 9 %}{{ resultado.set9_jugador2|default:'0' }}{% endif %}"
+                                   min="0"
+                                   placeholder="0"
+                                   {% if sets_guardados|get_guardado:set_num %}readonly title="Este set ya está guardado y no se puede modificar"{% else %}{% if set_num <= 3 %}required{% endif %}{% endif %}>
+                        </div>
                     </div>
-                    <div class="col-md-4">
-                        <input type="number" 
-                               class="form-control text-center{% if sets_guardados.set1 %} form-control-readonly{% endif %}" 
-                               name="set1_jugador1" 
-                               value="{{ resultado.set1_jugador1 }}" 
-                               min="0" 
-                               placeholder="Puntos"
-                               {% if sets_guardados.set1 %}readonly title="Este set ya está guardado y no se puede modificar"{% else %}required{% endif %}>
-                    </div>
-                    <div class="col-md-2 text-center">
-                        <span class="fs-4">-</span>
-                    </div>
-                    <div class="col-md-4">
-                        <input type="number" 
-                               class="form-control text-center{% if sets_guardados.set1 %} form-control-readonly{% endif %}" 
-                               name="set1_jugador2" 
-                               value="{{ resultado.set1_jugador2 }}" 
-                               min="0" 
-                               placeholder="Puntos"
-                               {% if sets_guardados.set1 %}readonly title="Este set ya está guardado y no se puede modificar"{% else %}required{% endif %}>
-                    </div>
-                </div>
-                
-                <div class="row mb-3{% if sets_guardados.set2 %} input-locked{% endif %}">
-                    <div class="col-md-2">
-                        <label class="form-label fw-bold">
-                            Set 2:
-                            {% if sets_guardados.set2 %}
-                                <i class="fas fa-lock text-success ms-1" title="Set guardado, no se puede modificar"></i>
-                            {% endif %}
-                        </label>
-                    </div>
-                    <div class="col-md-4">
-                        <input type="number" 
-                               class="form-control text-center{% if sets_guardados.set2 %} form-control-readonly{% endif %}" 
-                               name="set2_jugador1" 
-                               value="{{ resultado.set2_jugador1 }}" 
-                               min="0" 
-                               placeholder="Puntos"
-                               {% if sets_guardados.set2 %}readonly title="Este set ya está guardado y no se puede modificar"{% else %}required{% endif %}>
-                    </div>
-                    <div class="col-md-2 text-center">
-                        <span class="fs-4">-</span>
-                    </div>
-                    <div class="col-md-4">
-                        <input type="number" 
-                               class="form-control text-center{% if sets_guardados.set2 %} form-control-readonly{% endif %}" 
-                               name="set2_jugador2" 
-                               value="{{ resultado.set2_jugador2 }}" 
-                               min="0" 
-                               placeholder="Puntos"
-                               {% if sets_guardados.set2 %}readonly title="Este set ya está guardado y no se puede modificar"{% else %}required{% endif %}>
-                    </div>
-                </div>
-                
-                <div class="row mb-3{% if sets_guardados.set3 %} input-locked{% endif %}">
-                    <div class="col-md-2">
-                        <label class="form-label fw-bold">
-                            Set 3:
-                            {% if sets_guardados.set3 %}
-                                <i class="fas fa-lock text-success ms-1" title="Set guardado, no se puede modificar"></i>
-                            {% endif %}
-                        </label>
-                    </div>
-                    <div class="col-md-4">
-                        <input type="number" 
-                               class="form-control text-center{% if sets_guardados.set3 %} form-control-readonly{% endif %}" 
-                               name="set3_jugador1" 
-                               value="{{ resultado.set3_jugador1 }}" 
-                               min="0" 
-                               placeholder="Puntos"
-                               {% if sets_guardados.set3 %}readonly title="Este set ya está guardado y no se puede modificar"{% else %}required{% endif %}>
-                    </div>
-                    <div class="col-md-2 text-center">
-                        <span class="fs-4">-</span>
-                    </div>
-                    <div class="col-md-4">
-                        <input type="number" 
-                               class="form-control text-center{% if sets_guardados.set3 %} form-control-readonly{% endif %}" 
-                               name="set3_jugador2" 
-                               value="{{ resultado.set3_jugador2 }}" 
-                               min="0" 
-                               placeholder="Puntos"
-                               {% if sets_guardados.set3 %}readonly title="Este set ya está guardado y no se puede modificar"{% else %}required{% endif %}>
-                    </div>
-                </div>
-                
-                <!-- Sets opcionales (4 y 5) para torneos al mejor de 5 -->
-                {% if mejor_de_sets == 5 %}
-                <div class="row mb-3{% if sets_guardados.set4 %} input-locked{% endif %}">
-                    <div class="col-md-2">
-                        <label class="form-label fw-bold">
-                            Set 4:
-                            {% if sets_guardados.set4 %}
-                                <i class="fas fa-lock text-success ms-1" title="Set guardado, no se puede modificar"></i>
-                            {% endif %}
-                        </label>
-                        <small class="text-muted d-block">(Opcional)</small>
-                    </div>
-                    <div class="col-md-4">
-                        <input type="number" 
-                               class="form-control text-center{% if sets_guardados.set4 %} form-control-readonly{% endif %}" 
-                               name="set4_jugador1" 
-                               value="{% if resultado.set4_jugador1 %}{{ resultado.set4_jugador1 }}{% endif %}" 
-                               min="0" 
-                               placeholder="Puntos"
-                               {% if sets_guardados.set4 %}readonly title="Este set ya está guardado y no se puede modificar"{% endif %}>
-                    </div>
-                    <div class="col-md-2 text-center">
-                        <span class="fs-4">-</span>
-                    </div>
-                    <div class="col-md-4">
-                        <input type="number" 
-                               class="form-control text-center{% if sets_guardados.set4 %} form-control-readonly{% endif %}" 
-                               name="set4_jugador2" 
-                               value="{% if resultado.set4_jugador2 %}{{ resultado.set4_jugador2 }}{% endif %}" 
-                               min="0" 
-                               placeholder="Puntos"
-                               {% if sets_guardados.set4 %}readonly title="Este set ya está guardado y no se puede modificar"{% endif %}>
-                    </div>
-                </div>
-                
-                <div class="row mb-3{% if sets_guardados.set5 %} input-locked{% endif %}">
-                    <div class="col-md-2">
-                        <label class="form-label fw-bold">
-                            Set 5:
-                            {% if sets_guardados.set5 %}
-                                <i class="fas fa-lock text-success ms-1" title="Set guardado, no se puede modificar"></i>
-                            {% endif %}
-                        </label>
-                        <small class="text-muted d-block">(Opcional)</small>
-                    </div>
-                    <div class="col-md-4">
-                        <input type="number" 
-                               class="form-control text-center{% if sets_guardados.set5 %} form-control-readonly{% endif %}" 
-                               name="set5_jugador1" 
-                               value="{% if resultado.set5_jugador1 %}{{ resultado.set5_jugador1 }}{% endif %}" 
-                               min="0" 
-                               placeholder="Puntos"
-                               {% if sets_guardados.set5 %}readonly title="Este set ya está guardado y no se puede modificar"{% endif %}>
-                    </div>
-                    <div class="col-md-2 text-center">
-                        <span class="fs-4">-</span>
-                    </div>
-                    <div class="col-md-4">
-                        <input type="number" 
-                               class="form-control text-center{% if sets_guardados.set5 %} form-control-readonly{% endif %}" 
-                               name="set5_jugador2" 
-                               value="{% if resultado.set5_jugador2 %}{{ resultado.set5_jugador2 }}{% endif %}" 
-                               min="0" 
-                               placeholder="Puntos"
-                               {% if sets_guardados.set5 %}readonly title="Este set ya está guardado y no se puede modificar"{% endif %}>
-                    </div>
-                </div>
-                {% endif %}
-                
+                {% endfor %}
+
                 <!-- Información sobre las reglas -->
                 <div class="alert alert-info mt-4">
                     <h6><i class="fas fa-info-circle"></i> Reglas del Tenis de Mesa:</h6>
@@ -429,6 +360,11 @@
                     </button>
                     <a href="{% url 'iniciar_partidos' torneo.id %}" class="btn btn-secondary btn-lg">
                         <i class="fas fa-arrow-left"></i> Volver a Enfrentamientos
+                    </a>
+                    <a href="{% url 'cerrar_partido_organizador' torneo.id partido.id %}" 
+                        class="btn btn-warning btn-lg me-3"
+                        onclick="return confirm('¿Estás seguro de que quieres cerrar este partido? Esta acción no se puede deshacer.')">
+                        <i class="fas fa-flag-checkered"></i> Cerrar Partido
                     </a>
                 </div>
             </form>
@@ -668,11 +604,90 @@ function validarFormulario() {
     return esValido;
 }
 
+// Función para verificar si un set está completo
+function verificarSetCompleto(setNumber) {
+    const input1 = document.getElementById(`set${setNumber}_jugador1_${setNumber}`);
+    const input2 = document.getElementById(`set${setNumber}_jugador2_${setNumber}`);
+    if (!input1 || !input2) return false;
+    if (input1.hasAttribute('readonly') || input2.hasAttribute('readonly')) return true;
+    const puntos1 = parseInt(input1.value) || 0;
+    const puntos2 = parseInt(input2.value) || 0;
+    // Solo el primer set puede estar vacío al inicio
+    if (setNumber === 1 && puntos1 === 0 && puntos2 === 0) return true;
+    // Para los demás, 0-0 solo es válido si el anterior no está terminado
+    if (puntos1 === 0 && puntos2 === 0) return false;
+    return esSetTerminado(puntos1, puntos2);
+}
+
+function actualizarEstadoSets() {
+    console.log('🔄 Actualizando estado de sets...');
+    const totalSets = 9;
+    let ultimoSetCompleto = 0;
+    for (let i = 1; i <= totalSets; i++) {
+        const setCompleto = verificarSetCompleto(i);
+        console.log(`🔍 Set ${i}: ${setCompleto ? 'Completo' : 'Incompleto'}`);
+        if (setCompleto) {
+            ultimoSetCompleto = i;
+        } else {
+            break;
+        }
+    }
+    console.log(`✅ Último set completo: ${ultimoSetCompleto}`);
+    for (let i = 1; i <= totalSets; i++) {
+        const input1 = document.getElementById(`set${i}_jugador1_${i}`);
+        const input2 = document.getElementById(`set${i}_jugador2_${i}`);
+        const fila = input1 ? input1.closest('.row') : null;
+        if (input1 && input2 && !input1.hasAttribute('readonly')) {
+            if (i <= ultimoSetCompleto + 1) {
+                input1.disabled = false;
+                input2.disabled = false;
+                if (fila) {
+                    fila.classList.remove('set-bloqueado');
+                    fila.style.opacity = '1';
+                    const mensaje = fila.querySelector('.mensaje-bloqueo');
+                    if (mensaje) mensaje.remove();
+                }
+            } else {
+                input1.disabled = true;
+                input2.disabled = true;
+                input1.value = '0';
+                input2.value = '0';
+                if (fila) {
+                    fila.classList.add('set-bloqueado');
+                    fila.style.opacity = '0.5';
+                    if (!fila.querySelector('.mensaje-bloqueo')) {
+                        const label = fila.querySelector('.form-label');
+                        if (label) {
+                            const mensaje = document.createElement('small');
+                            mensaje.className = 'mensaje-bloqueo text-muted d-block';
+                            mensaje.innerHTML = '<i class="fas fa-lock"></i> Completa el set anterior';
+                            label.appendChild(mensaje);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 // Agregar validación en tiempo real
 document.addEventListener('DOMContentLoaded', function() {
-    const inputs = document.querySelectorAll('input[type="number"]:not([readonly])'); // Solo inputs que no sean readonly
-    inputs.forEach(input => {
+    console.log('🚀 Iniciando validación secuencial...');
+    
+    const inputs = document.querySelectorAll('input[type="number"]:not([readonly])');
+    console.log(`📝 Inputs encontrados: ${inputs.length}`);
+    
+    // Estado inicial: actualizar bloqueos al cargar
+    setTimeout(() => {
+        actualizarEstadoSets();
+    }, 100);
+    
+    inputs.forEach((input, index) => {
+        console.log(`🔗 Agregando eventos a input ${index + 1}: ${input.name}`);
+        
         input.addEventListener('input', function() {
+            console.log(`⌨️ Input cambiado: ${this.name} = ${this.value}`);
+            
             // Validar en tiempo real solo si ambos campos del set tienen valores
             const setName = this.name.replace('_jugador1', '').replace('_jugador2', '');
             const input1 = document.querySelector(`input[name="${setName}_jugador1"]`);
@@ -693,11 +708,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Verificar si el set está listo para guardarse
                 if ((puntos1 > 0 || puntos2 > 0)) {
                     const error = validarSetTenisMesa(puntos1, puntos2);
-                    const nombreSet = setName.replace('set1', 'Set 1')
-                                            .replace('set2', 'Set 2')
-                                            .replace('set3', 'Set 3')
-                                            .replace('set4', 'Set 4')
-                                            .replace('set5', 'Set 5');
+                    const nombreSet = setName.replace(/set(\d+)/, 'Set $1');
                     
                     if (error) {
                         mostrarError(input1, `${nombreSet}: ${error}`);
@@ -709,6 +720,41 @@ document.addEventListener('DOMContentLoaded', function() {
                 } else {
                     // Si ambos están en 0, limpiar cualquier indicador
                     limpiarIndicadoresSet(input1, input2);
+                }
+                
+                // NUEVA FUNCIONALIDAD: Actualizar estado de sets posteriores
+                setTimeout(() => {
+                    actualizarEstadoSets();
+                }, 50);
+            }
+        });
+        
+        // También validar cuando se hace foco para evitar que escriban en sets bloqueados
+        input.addEventListener('focus', function() {
+            if (this.disabled) {
+                console.log(`❌ Intento de escribir en set bloqueado: ${this.name}`);
+                this.blur();
+                
+                // Mostrar mensaje temporal
+                const fila = this.closest('.row');
+                if (fila) {
+                    // Evitar duplicar alertas
+                    const alertaExistente = fila.querySelector('.alert-warning');
+                    if (alertaExistente) {
+                        alertaExistente.remove();
+                    }
+                    
+                    const alerta = document.createElement('div');
+                    alerta.className = 'alert alert-warning alert-sm mt-2';
+                    alerta.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Debes completar el set anterior antes de anotar puntos aquí.';
+                    fila.appendChild(alerta);
+                    
+                    // Remover mensaje después de 3 segundos
+                    setTimeout(() => {
+                        if (alerta.parentNode) {
+                            alerta.remove();
+                        }
+                    }, 3000);
                 }
             }
         });
@@ -847,7 +893,11 @@ document.addEventListener('DOMContentLoaded', function() {
             { nombre: 'Set 2', input1: 'set2_jugador1', input2: 'set2_jugador2' },
             { nombre: 'Set 3', input1: 'set3_jugador1', input2: 'set3_jugador2' },
             { nombre: 'Set 4', input1: 'set4_jugador1', input2: 'set4_jugador2' },
-            { nombre: 'Set 5', input1: 'set5_jugador1', input2: 'set5_jugador2' }
+            { nombre: 'Set 5', input1: 'set5_jugador1', input2: 'set5_jugador2' },
+            { nombre: 'Set 6', input1: 'set6_jugador1', input2: 'set6_jugador2' },
+            { nombre: 'Set 7', input1: 'set7_jugador1', input2: 'set7_jugador2' },
+            { nombre: 'Set 8', input1: 'set8_jugador1', input2: 'set8_jugador2' },
+            { nombre: 'Set 9', input1: 'set9_jugador1', input2: 'set9_jugador2' }
         ];
         
         sets.forEach(set => {
@@ -881,8 +931,34 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Verificar estado inicial del botón al cargar la página
     setTimeout(() => {
+        console.log('🔍 Verificando estado inicial...');
         verificarEstadoBoton();
-    }, 100);
+        actualizarEstadoSets();
+        
+        // Agregar botón de depuración temporal (puedes removerlo después)
+        const form = document.querySelector('form');
+        if (form) {
+            const debugButton = document.createElement('button');
+            debugButton.type = 'button';
+            debugButton.className = 'btn btn-info btn-sm me-2';
+            debugButton.innerHTML = '<i class="fas fa-bug"></i> Debug Sets';
+            debugButton.onclick = function() {
+                console.log('🐛 Estado actual de los sets:');
+                for (let i = 1; i <= 9; i++) {
+                    const input1 = document.querySelector(`input[name="set${i}_jugador1"]`);
+                    const input2 = document.querySelector(`input[name="set${i}_jugador2"]`);
+                    if (input1 && input2) {
+                        console.log(`Set ${i}: ${input1.value}-${input2.value}, Completo: ${verificarSetCompleto(i)}, Disabled: ${input1.disabled}`);
+                    }
+                }
+            };
+            
+            const submitButton = form.querySelector('#btnGuardarResultado');
+            if (submitButton) {
+                submitButton.parentNode.insertBefore(debugButton, submitButton);
+            }
+        }
+    }, 500);
 });
 </script>
 {% endblock %}

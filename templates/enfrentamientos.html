@@ -2,7 +2,7 @@
 {% load static %}
 {% block content %}
 <div class="container">
-    <h2>Enfrentamientos - Primera Ronda</h2>
+    <h2>Enfrentamientos del Torneo</h2>
     <h4 class="text-muted mb-4">{{ torneo.nombre }}</h4>
     
     <!-- Mensajes de estado -->
@@ -18,34 +18,53 @@
     <!-- Información del torneo -->
     <div class="card mb-4">
         <div class="card-header bg-success text-white">
-            <h5 class="mb-0"><i class="fas fa-play-circle"></i> Partidos en Curso</h5>
+            <h5 class="mb-0"><i class="fas fa-play-circle"></i> Torneo en Curso</h5>
         </div>
         <div class="card-body">
             <div class="row">
                 <div class="col-md-6">
-                    <p><strong>Total de enfrentamientos:</strong> {{ partidos.count }}</p>
                     <p><strong>Modalidad:</strong> {{ torneo.get_mejor_de_sets_display }}</p>
+                    <p><strong>Final:</strong> {{ torneo.get_mejor_de_sets_final_display }}</p>
                 </div>
                 <div class="col-md-6">
-                    <p><strong>Final:</strong> {{ torneo.get_mejor_de_sets_final_display }}</p>
+                    <p><strong>Ronda Actual:</strong> {{ ronda_actual }}</p>
                     <p><strong>Estado:</strong> <span class="badge bg-warning text-dark">En curso</span></p>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Lista de enfrentamientos -->
-    <div class="container">
+    <!-- Mostrar todas las rondas -->
+    {% for ronda, partidos_ronda in partidos_por_ronda.items %}
+    <div class="ronda-section mb-5">
+        <!-- Título de la ronda -->
+        <div class="row">
+            <div class="col-12">
+                <h3 class="text-center mb-4">
+                    {% if ronda == 1 %}
+                        <span class="badge bg-primary fs-5">Primera Ronda</span>
+                    {% elif ronda == total_rondas %}
+                        <span class="badge bg-danger fs-5">Final</span>
+                    {% elif ronda == total_rondas|add:"-1" and total_rondas > 2 %}
+                        <span class="badge bg-warning fs-5">Semifinal</span>
+                    {% else %}
+                        <span class="badge bg-info fs-5">Ronda {{ ronda }}</span>
+                    {% endif %}
+                </h3>
+            </div>
+        </div>
+
+        <!-- Enfrentamientos de la ronda -->
         <div class="row justify-content-center">
-            <div class="col-lg-8 col-md-10">
-                {% for partido in partidos %}
-                <div class="mb-3">
-                    <div class="card border-primary">
+            {% if partidos_ronda %}
+                {% for partido in partidos_ronda %}
+                <div class="col-lg-6 col-md-8 col-12 mb-3">
+                    <div class="card border-primary" data-partido-id="{{ partido.id }}">
                         <div class="card-header bg-primary text-white text-center">
-                            <strong>Enfrentamiento {{ forloop.counter }}</strong>
+                            <strong>Enfrentamiento {{ partido.llave_torneo.posicion }}</strong>
                             {% if partido.estado_partido == 'jugado' %}
                                 <span class="badge bg-success float-end">
-                                    <i class="fas fa-check-circle"></i> {{ partido.get_estado_partido_display }}
+                                    <i class="fas fa-check-circle"></i> Finalizado
                                 </span>
                             {% elif partido.es_partido_bye %}
                                 <span class="badge bg-info float-end">
@@ -53,24 +72,32 @@
                                 </span>
                             {% else %}
                                 <span class="badge bg-warning text-dark float-end">
-                                    <i class="fas fa-clock"></i> {{ partido.get_estado_partido_display }}
+                                    <i class="fas fa-clock"></i> Pendiente
                                 </span>
                             {% endif %}
                         </div>
                         <div class="card-body text-center">
-                            <div class="mb-2">
-                                <strong class="text-primary">{{ partido.jugador1_nombre }}</strong>
+                            <div class="row align-items-center">
+                                <div class="col-5">
+                                    <div class="p-3 {% if partido.ganador == partido.jugador1 %}bg-success text-white rounded{% endif %}">
+                                        <strong>{{ partido.jugador1_nombre }}</strong>
+                                    </div>
+                                </div>
+                                <div class="col-2">
+                                    <span class="badge bg-secondary fs-6">VS</span>
+                                </div>
+                                <div class="col-5">
+                                    <div class="p-3 {% if partido.ganador == partido.jugador2 %}bg-success text-white rounded{% endif %}">
+                                        <strong>{{ partido.jugador2_nombre }}</strong>
+                                    </div>
+                                </div>
                             </div>
-                            <div class="mb-2">
-                                <span class="badge bg-secondary">VS</span>
-                            </div>
-                            <div class="mb-3">
-                                <strong class="text-danger">{{ partido.jugador2_nombre }}</strong>
-                            </div>
+
+                            
                             
                             <!-- Mostrar resultado si el partido ya está jugado -->
                             {% if partido.estado_partido == 'jugado' and partido.ganador %}
-                                <div class="alert alert-success mb-3">
+                                <div class="alert alert-success mt-3">
                                     <i class="fas fa-trophy"></i> 
                                     <strong>Ganador: {{ partido.ganador.nombre }} {{ partido.ganador.apellido }}</strong>
                                     {% if partido.es_partido_bye %}
@@ -79,10 +106,32 @@
                                 </div>
                             {% endif %}
                             
+                            <!-- NUEVO: Mensaje de confirmación EN ENFRENTAMIENTOS -->
+                            {% if partido.pendiente_confirmacion %}
+                                <div class="alert alert-warning text-center mt-3 confirmacion-pendiente">
+                                    {% if es_organizador %}
+                                        <h6><i class="fas fa-exclamation-triangle"></i> Confirmación Requerida</h6>
+                                        <p class="mb-2">El árbitro ha completado el partido</p>
+                                        <p><strong>Ganador:</strong> {{ partido.ganador.nombre }} {{ partido.ganador.apellido }}</p>
+                                        <form method="post" action="{% url 'confirmar_resultado_partido' torneo.id partido.id %}" style="display: inline;">
+                                            {% csrf_token %}
+                                            <button type="submit" class="btn btn-success btn-sm me-2">
+                                                <i class="fas fa-check"></i> Confirmar
+                                            </button>
+                                        </form>
+                                        <a href="{% url 'registrar_resultado' torneo.id partido.id %}" class="btn btn-warning btn-sm">
+                                            <i class="fas fa-edit"></i> Modificar
+                                        </a>
+                                    {% else %}
+                                        <h6><i class="fas fa-clock"></i> Esperando Confirmación</h6>
+                                        <p class="mb-0">Ganador provisional: {{ partido.ganador.nombre }} {{ partido.ganador.apellido }}</p>
+                                    {% endif %}
+                                </div>
+                            {% endif %}
+                            
                             <!-- Información adicional -->
-                            <div class="small text-muted">
-                                <p class="mb-1">Llave: {{ partido.llave_torneo.posicion }}</p>
-                                <p class="mb-0">Ronda: {{ partido.llave_torneo.ronda }}</p>
+                            <div class="small text-muted mt-2">
+                                <p class="mb-0">Ronda: {{ partido.llave_torneo.ronda }} | Posición: {{ partido.llave_torneo.posicion }}</p>
                             </div>
                             
                             <!-- Botón para registrar resultado -->
@@ -96,32 +145,547 @@
                                         <i class="fas fa-forward"></i> Procesado Automáticamente
                                     </span>
                                 {% else %}
-                                    <a href="{% url 'registrar_resultado' torneo.id partido.id %}" class="btn btn-sm btn-success">
-                                        <i class="fas fa-edit"></i> Registrar Resultado
-                                    </a>
+                                    <div class="d-flex gap-2 justify-content-center">
+                                        <a href="{% url 'registrar_resultado' torneo.id partido.id %}" 
+                                           class="btn btn-sm btn-success">
+                                            <i class="fas fa-edit"></i> Registrar Resultado
+                                        </a>
+                                        {% if partido.arbitro %}
+                                            <a href="{% url 'ver_puntaje_vivo' torneo.id partido.id %}" 
+                                               class="btn btn-sm btn-warning">
+                                                <i class="fas fa-eye"></i> Ver Puntaje en Vivo
+                                            </a>
+                                        {% endif %}
+                                    </div>
                                 {% endif %}
                             </div>
+                            
+                            <!-- Sección de asignación de árbitro -->
+                            {% if partido.estado_partido != 'jugado' and partido.jugador1 and partido.jugador2 and not partido.es_partido_bye and not partido.ganador %}
+                            <div class="mt-3 border-top pt-3">
+                                <h6 class="text-muted mb-2">
+                                    <i class="fas fa-user-tie"></i> Asignar Árbitro
+                                </h6>
+                                
+                                <!-- Mostrar árbitro actual si existe -->
+                                {% if partido.arbitro %}
+                                    <div class="alert alert-info py-2 mb-2">
+                                        <small>
+                                            <strong>Árbitro asignado:</strong><br>
+                                            ID: {{ partido.arbitro.id }} - {{ partido.arbitro.first_name }} {{ partido.arbitro.last_name }}
+                                        </small>
+                                    </div>
+                                {% endif %}
+                                
+                                <form method="post" action="{% url 'asignar_arbitro_partido' torneo.id partido.id %}" class="d-inline arbitro-form">
+                                    {% csrf_token %}
+                                    <div class="row align-items-end">
+                                        <div class="col-8">
+                                            <select name="arbitro_id" class="form-select form-select-sm arbitro-select" required>
+                                                <option value="">Seleccionar árbitro...</option>
+                                                {% for arbitro_torneo in arbitros_disponibles %}
+                                                    <option value="{{ arbitro_torneo.arbitro.id }}" 
+                                                            data-arbitro-id="{{ arbitro_torneo.arbitro.id }}"
+                                                            {% if partido.arbitro.id == arbitro_torneo.arbitro.id %}selected{% endif %}>
+                                                        ID: {{ arbitro_torneo.arbitro.id }} - {{ arbitro_torneo.arbitro.first_name }} {{ arbitro_torneo.arbitro.last_name }}
+                                                    </option>
+                                                {% endfor %}
+                                            </select>
+                                            <small class="text-muted d-block mt-1">
+                                                <i class="fas fa-info-circle"></i> Los árbitros ocupados aparecen marcados y no se pueden seleccionar
+                                            </small>
+                                        </div>
+                                        <div class="col-4">
+                                            <button type="submit" class="btn btn-sm btn-primary w-100">
+                                                <i class="fas fa-user-plus"></i> Asignar
+                                            </button>
+                                        </div>
+                                    </div>
+                                </form>
+                                
+                                <!-- Botón para remover árbitro -->
+                                {% if partido.arbitro %}
+                                <form method="post" action="{% url 'asignar_arbitro_partido' torneo.id partido.id %}" class="d-inline mt-2">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-sm btn-outline-secondary w-100">
+                                        <i class="fas fa-user-minus"></i> Remover Árbitro
+                                    </button>
+                                </form>
+                                {% endif %}
+                            </div>
+                            {% endif %}
                         </div>
                     </div>
                 </div>
-                {% empty %}
-                <div class="alert alert-warning text-center">
-                    <i class="fas fa-exclamation-triangle"></i>
-                    No hay enfrentamientos disponibles. Asegúrate de haber definido las llaves del torneo.
-                </div>
                 {% endfor %}
+            {% else %}
+                <!-- Mostrar mensaje cuando no hay partidos en esta ronda -->
+                <div class="col-12">
+                    <div class="alert alert-secondary text-center">
+                        <i class="fas fa-hourglass-half"></i>
+                        <strong>Enfrentamientos por definir</strong>
+                        <br><small class="text-muted">Los participantes se definirán una vez que se completen las rondas anteriores.</small>
+                    </div>
+                </div>
+            {% endif %}
+        </div>
+
+        <!-- Información adicional para la ronda actual -->
+        {% if ronda == ronda_actual and partidos_ronda %}
+        <div class="text-center mt-4">
+            <div class="alert alert-info">
+                <i class="fas fa-info-circle"></i>
+                <strong>Nota:</strong> Los ganadores avanzan automáticamente a la siguiente ronda al completar su partido.
             </div>
         </div>
+        {% endif %}
     </div>
+    {% empty %}
+    <div class="alert alert-warning text-center">
+        <i class="fas fa-exclamation-triangle"></i>
+        No hay enfrentamientos disponibles. Asegúrate de haber definido las llaves del torneo.
+    </div>
+    {% endfor %}
+
+    <!-- Sección especial para el partido de tercer lugar -->
+    {% if partidos_tercer_lugar %}
+    <div class="ronda-section mb-5">
+        <!-- Título del tercer lugar -->
+        <div class="row">
+            <div class="col-12">
+                <h3 class="text-center mb-4">
+                    <span class="badge bg-warning text-dark fs-5">
+                        <i class="fas fa-medal"></i> Tercer Lugar
+                    </span>
+                </h3>
+            </div>
+        </div>
+
+        <!-- Enfrentamiento del tercer lugar -->
+        <div class="row justify-content-center">
+            {% for partido in partidos_tercer_lugar %}
+            <div class="col-lg-6 col-md-8 col-12 mb-3">
+                <div class="card border-warning">
+                    <div class="card-header bg-warning text-dark text-center">
+                        <strong><i class="fas fa-medal"></i> Partido por el Tercer Lugar</strong>
+                        {% if partido.estado_partido == 'jugado' %}
+                            <span class="badge bg-success float-end">
+                                <i class="fas fa-check-circle"></i> Finalizado
+                            </span>
+                        {% else %}
+                            <span class="badge bg-secondary float-end">
+                                <i class="fas fa-clock"></i> Pendiente
+                            </span>
+                        {% endif %}
+                    </div>
+                    <div class="card-body text-center">
+                        <div class="row align-items-center">
+                            <div class="col-5">
+                                <div class="p-3 {% if partido.ganador == partido.jugador1 %}bg-warning text-dark rounded{% endif %}">
+                                    <strong>{{ partido.jugador1_nombre }}</strong>
+                                    <br><small class="text-muted">Perdedor Semifinal</small>
+                                </div>
+                            </div>
+                            <div class="col-2">
+                                <span class="badge bg-secondary fs-6">VS</span>
+                            </div>
+                            <div class="col-5">
+                                <div class="p-3 {% if partido.ganador == partido.jugador2 %}bg-warning text-dark rounded{% endif %}">
+                                    <strong>{{ partido.jugador2_nombre }}</strong>
+                                    <br><small class="text-muted">Perdedor Semifinal</small>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Mostrar resultado si el partido ya está jugado -->
+                        {% if partido.estado_partido == 'jugado' and partido.ganador %}
+                            <div class="alert alert-warning mt-3">
+                                <i class="fas fa-medal"></i> 
+                                <strong>🥉 Tercer Lugar: {{ partido.ganador.nombre }} {{ partido.ganador.apellido }}</strong>
+                            </div>
+                        {% endif %}
+                        
+                        <!-- Información adicional -->
+                        <div class="small text-muted mt-2">
+                            <p class="mb-0">Partido especial para determinar el tercer lugar</p>
+                        </div>
+                        
+                        <!-- Botón para registrar resultado -->
+                        <div class="mt-3">
+                            {% if partido.estado_partido == 'jugado' %}
+                                <span class="badge bg-success">
+                                    <i class="fas fa-check"></i> Partido Finalizado
+                                </span>
+                            {% else %}
+                                <div class="d-flex gap-2 justify-content-center">
+                                    <a href="{% url 'registrar_resultado' torneo.id partido.id %}" 
+                                       class="btn btn-sm btn-warning">
+                                        <i class="fas fa-edit"></i> Registrar Resultado
+                                    </a>
+                                    {% if partido.arbitro %}
+                                        <a href="{% url 'ver_puntaje_vivo' torneo.id partido.id %}" 
+                                           class="btn btn-sm btn-info">
+                                            <i class="fas fa-eye"></i> Ver Puntaje en Vivo
+                                        </a>
+                                    {% endif %}
+                                </div>
+                            {% endif %}
+                        </div>
+                        
+                        <!-- Sección de asignación de árbitro para tercer lugar -->
+                        {% if partido.estado_partido != 'jugado' and partido.jugador1 and partido.jugador2 and not partido.ganador %}
+                        <div class="mt-3 border-top pt-3">
+                            <h6 class="text-muted mb-2">
+                                <i class="fas fa-user-tie"></i> Asignar Árbitro
+                            </h6>
+                            
+                            <!-- Mostrar árbitro actual si existe -->
+                            {% if partido.arbitro %}
+                                <div class="alert alert-info py-2 mb-2">
+                                    <small>
+                                        <strong>Árbitro asignado:</strong><br>
+                                        ID: {{ partido.arbitro.id }} - {{ partido.arbitro.first_name }} {{ partido.arbitro.last_name }}
+                                    </small>
+                                </div>
+                            {% endif %}
+                            
+                            <form method="post" action="{% url 'asignar_arbitro_partido' torneo.id partido.id %}" class="d-inline arbitro-form">
+                                {% csrf_token %}
+                                <div class="row align-items-end">
+                                    <div class="col-8">
+                                        <select name="arbitro_id" class="form-select form-select-sm arbitro-select" required>
+                                            <option value="">Seleccionar árbitro...</option>
+                                            {% for arbitro_torneo in arbitros_disponibles %}
+                                                <option value="{{ arbitro_torneo.arbitro.id }}" 
+                                                        data-arbitro-id="{{ arbitro_torneo.arbitro.id }}"
+                                                        {% if partido.arbitro.id == arbitro_torneo.arbitro.id %}selected{% endif %}>
+                                                    ID: {{ arbitro_torneo.arbitro.id }} - {{ arbitro_torneo.arbitro.first_name }} {{ arbitro_torneo.arbitro.last_name }}
+                                                </option>
+                                            {% endfor %}
+                                        </select>
+                                        <small class="text-muted d-block mt-1">
+                                            <i class="fas fa-info-circle"></i> Los árbitros ocupados aparecen marcados y no se pueden seleccionar
+                                        </small>
+                                    </div>
+                                    <div class="col-4">
+                                        <button type="submit" class="btn btn-sm btn-primary w-100">
+                                            <i class="fas fa-user-plus"></i> Asignar
+                                        </button>
+                                    </div>
+                                </div>
+                            </form>
+                            
+                            <!-- Botón para remover árbitro -->
+                            {% if partido.arbitro %}
+                            <form method="post" action="{% url 'asignar_arbitro_partido' torneo.id partido.id %}" class="d-inline mt-2">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-sm btn-outline-secondary w-100">
+                                    <i class="fas fa-user-minus"></i> Remover Árbitro
+                                </button>
+                            </form>
+                            {% endif %}
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
     
-    <!-- Botón de navegación -->
-    <div class="text-center mt-4">
-        <a href="{% url 'procesar_partidos_bye_masivo' torneo.id %}" class="btn btn-info me-2">
-            <i class="fas fa-forward"></i> Procesar Partidos BYE
-        </a>
+    <!-- Mostrar mensaje si no hay enfrentamientos -->
+    {% if not partidos_por_ronda and not partidos_tercer_lugar %}
+    <div class="alert alert-warning text-center">
+        <i class="fas fa-exclamation-triangle"></i>
+        No hay enfrentamientos disponibles. Asegúrate de haber definido las llaves del torneo.
+    </div>
+    {% endif %}
+    
+    <!-- Botones de navegación -->
+    <div class="text-center mt-5">
         <a href="{% url 'lista_torneos' %}" class="btn btn-primary">
             <i class="fas fa-arrow-left"></i> Volver a Tus Torneos
         </a>
     </div>
 </div>
+
+<!-- Botón de Resultados del Torneo -->
+<div class="row mb-4">
+    <div class="col-12 text-center">
+        {% if torneo_completado %}
+        <div class="alert alert-success">
+            <h4><i class="fas fa-trophy"></i> Resultados del Torneo</h4>
+            <p>Tabla de Resultados del torneo</p>
+            <a href="{% url 'resultados_torneo' torneo.id %}" class="btn btn-success btn-lg">
+                <i class="fas fa-medal"></i> Ver Resultados del Torneo
+            </a>
+        </div>
+        {% else %}
+        <div class="alert alert-success">
+            <h4><i class="fas fa-trophy"></i> Resultados del Torneo</h4>
+            <p>Tabla de Resultados del torneo</p>
+            <a href="{% url 'resultados_torneo' torneo.id %}" class="btn btn-success btn-lg">
+                <i class="fas fa-medal"></i> Ver Resultados del Torneo
+            </a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<style>
+.ronda-section {
+    border-bottom: 2px solid #e9ecef;
+    padding-bottom: 2rem;
+}
+.ronda-section:last-child {
+    border-bottom: none;
+}
+
+/* Estilos para árbitros ocupados */
+.arbitro-ocupado {
+    background-color: #ffebee !important;
+    color: #c62828 !important;
+    font-weight: bold;
+}
+
+.arbitro-select option:disabled {
+    background-color: #ffcdd2 !important;
+    color: #b71c1c !important;
+    font-style: italic;
+}
+
+/* Estilos para el select cuando se selecciona una opción deshabilitada */
+.arbitro-select:invalid {
+    border-color: #dc3545;
+    box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.25);
+}
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Obtener todos los árbitros actualmente asignados a partidos no finalizados
+    const arbitrosOcupados = new Set();
+    const partidosConArbitro = new Map(); // Map arbitro_id -> [partido_ids]
+    
+    // Recopilar información de árbitros ocupados
+    {% for ronda, partidos_ronda in partidos_por_ronda.items %}
+        {% for partido in partidos_ronda %}
+            {% if partido.arbitro and partido.estado_partido != 'jugado' %}
+                arbitrosOcupados.add('{{ partido.arbitro.id }}');
+                if (!partidosConArbitro.has('{{ partido.arbitro.id }}')) {
+                    partidosConArbitro.set('{{ partido.arbitro.id }}', []);
+                }
+                partidosConArbitro.get('{{ partido.arbitro.id }}').push({
+                    id: '{{ partido.id }}',
+                    enfrentamiento: '{{ partido.jugador1_nombre }} vs {{ partido.jugador2_nombre }}',
+                    ronda: '{{ ronda }}'
+                });
+            {% endif %}
+        {% endfor %}
+    {% endfor %}
+    
+    {% for partido in partidos_tercer_lugar %}
+        {% if partido.arbitro and partido.estado_partido != 'jugado' %}
+            arbitrosOcupados.add('{{ partido.arbitro.id }}');
+            if (!partidosConArbitro.has('{{ partido.arbitro.id }}')) {
+                partidosConArbitro.set('{{ partido.arbitro.id }}', []);
+            }
+            partidosConArbitro.get('{{ partido.arbitro.id }}').push({
+                id: '{{ partido.id }}',
+                enfrentamiento: '{{ partido.jugador1_nombre }} vs {{ partido.jugador2_nombre }}',
+                ronda: 'Tercer Lugar'
+            });
+        {% endif %}
+    {% endfor %}
+    
+    console.log('Árbitros ocupados:', Array.from(arbitrosOcupados));
+    console.log('Detalle de asignaciones:', partidosConArbitro);
+    
+    // Función para obtener el ID del partido desde el formulario
+    function obtenerPartidoIdDelFormulario(elemento) {
+        const form = elemento.closest('form');
+        if (form) {
+            const action = form.getAttribute('action');
+            const match = action.match(/\/partidos\/(\d+)\//);
+            return match ? match[1] : null;
+        }
+        return null;
+    }
+    
+    // Función para obtener el árbitro actual asignado al partido
+    function obtenerArbitroActualDelPartido(select) {
+        const selectedOption = select.querySelector('option:checked');
+        return selectedOption && selectedOption.value !== '' ? selectedOption.value : null;
+    }
+    
+    // Función principal para actualizar todos los selects
+    function actualizarSelectsArbitros() {
+        const selects = document.querySelectorAll('.arbitro-select');
+        
+        selects.forEach(select => {
+            const partidoActual = obtenerPartidoIdDelFormulario(select);
+            const arbitroActualDelPartido = obtenerArbitroActualDelPartido(select);
+            
+            Array.from(select.options).forEach(option => {
+                if (option.value === '') return;
+                
+                const arbitroId = option.value;
+                const estaOcupado = arbitrosOcupados.has(arbitroId);
+                const esElArbitroActual = arbitroId === arbitroActualDelPartido;
+                
+                // Limpiar estado anterior
+                option.disabled = false;
+                option.classList.remove('arbitro-ocupado');
+                option.textContent = option.textContent.replace(/ \(OCUPADO.*?\)/, '');
+                
+                if (estaOcupado && !esElArbitroActual) {
+                    // Obtener información del partido donde está ocupado
+                    const partidosAsignados = partidosConArbitro.get(arbitroId) || [];
+                    const infoPartido = partidosAsignados[0]; // Tomar el primer partido (debería ser solo uno)
+                    
+                    option.disabled = true;
+                    option.classList.add('arbitro-ocupado');
+                    option.textContent += ` (OCUPADO - ${infoPartido.ronda})`;
+                    option.title = `Este árbitro está ocupado en: ${infoPartido.enfrentamiento}`;
+                }
+            });
+            
+            // Si el select tiene seleccionado un árbitro ocupado, limpiar selección
+            if (select.value && arbitrosOcupados.has(select.value) && select.value !== arbitroActualDelPartido) {
+                select.value = '';
+            }
+        });
+    }
+    
+    // Función para validar antes de enviar el formulario
+    function validarAsignacionArbitro(event) {
+        const form = event.target;
+        const select = form.querySelector('.arbitro-select');
+        
+        if (!select) return true;
+        
+        const arbitroSeleccionado = select.value;
+        const submitBtn = form.querySelector('button[type="submit"]');
+        const esRemover = submitBtn && submitBtn.textContent.includes('Remover');
+        
+        // Si es un botón de remover, permitir siempre
+        if (esRemover) return true;
+        
+        // Si no se seleccionó árbitro, no validar
+        if (!arbitroSeleccionado) return true;
+        
+        const arbitroActual = obtenerArbitroActualDelPartido(select);
+        
+        // Verificar si el árbitro está ocupado
+        if (arbitrosOcupados.has(arbitroSeleccionado) && arbitroSeleccionado !== arbitroActual) {
+            event.preventDefault();
+            
+            const partidosAsignados = partidosConArbitro.get(arbitroSeleccionado) || [];
+            const infoPartido = partidosAsignados[0];
+            
+            alert(`¡Error! Este árbitro ya está asignado a otro partido:\n\n` +
+                  `Enfrentamiento: ${infoPartido.enfrentamiento}\n` +
+                  `Ronda: ${infoPartido.ronda}\n\n` +
+                  `Por favor, selecciona un árbitro diferente o espera a que termine el partido actual.`);
+            
+            select.value = '';
+            return false;
+        }
+        
+        return true;
+    }
+    
+    // Función para manejar cambios en el select
+    function manejarCambioSelect(event) {
+        const select = event.target;
+        const selectedOption = select.options[select.selectedIndex];
+        
+        if (selectedOption.disabled && selectedOption.value !== '') {
+            const arbitroId = selectedOption.value;
+            const partidosAsignados = partidosConArbitro.get(arbitroId) || [];
+            const infoPartido = partidosAsignados[0];
+            
+            select.value = '';
+            
+            alert(`Este árbitro ya está ocupado en:\n\n` +
+                  `${infoPartido.enfrentamiento}\n` +
+                  `Ronda: ${infoPartido.ronda}\n\n` +
+                  `Por favor, selecciona un árbitro diferente.`);
+        }
+    }
+    
+    // Agregar event listeners
+    document.querySelectorAll('.arbitro-form').forEach(form => {
+        form.addEventListener('submit', validarAsignacionArbitro);
+    });
+    
+    document.querySelectorAll('.arbitro-select').forEach(select => {
+        select.addEventListener('change', manejarCambioSelect);
+    });
+    
+    // Ejecutar actualización inicial
+    actualizarSelectsArbitros();
+    
+    // Mostrar información en consola
+    if (arbitrosOcupados.size > 0) {
+        console.log(`Sistema de validación activo: ${arbitrosOcupados.size} árbitro(s) ocupado(s).`);
+    } else {
+        console.log('Sistema de validación activo: Todos los árbitros están disponibles.');
+    }
+    
+    // Agregar indicador visual en la página
+    const container = document.querySelector('.container');
+    if (container && arbitrosOcupados.size > 0) {
+        const alertDiv = document.createElement('div');
+        alertDiv.className = 'alert alert-info alert-dismissible fade show mt-3';
+        alertDiv.innerHTML = `
+            <i class="fas fa-info-circle"></i>
+            <strong>Sistema de validación activo:</strong> 
+            ${arbitrosOcupados.size} árbitro(s) están ocupados en partidos activos y aparecen marcados en rojo.
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        `;
+        container.insertBefore(alertDiv, container.children[2]); // Insertar después del título
+    }
+    
+    // **NUEVO: Sistema de polling para confirmaciones en tiempo real**
+    function verificarConfirmacionesPendientes() {
+        // Solo verificar si el usuario es organizador
+        {% if es_organizador %}
+        // Buscar todos los partidos en la página
+        const partidosEnPagina = document.querySelectorAll('[data-partido-id]');
+        
+        partidosEnPagina.forEach(partidoElement => {
+            const partidoId = partidoElement.getAttribute('data-partido-id');
+            
+            fetch(`/torneos/{{ torneo.id }}/partido/${partidoId}/estado-ajax/`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        console.error('Error verificando partido:', partidoId, data.error);
+                        return;
+                    }
+                    
+                    // Verificar si cambió el estado de confirmación
+                    const confirmacionExistente = partidoElement.querySelector('.confirmacion-pendiente');
+                    
+                    if (data.pendiente_confirmacion && !confirmacionExistente) {
+                        // El partido ahora está pendiente de confirmación, recargar página
+                        location.reload();
+                    } else if (!data.pendiente_confirmacion && confirmacionExistente) {
+                        // El partido ya no está pendiente, recargar página
+                        location.reload();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error verificando estado del partido:', partidoId, error);
+                });
+        });
+        {% endif %}
+    }
+
+    // Verificar cada 3 segundos
+    setInterval(verificarConfirmacionesPendientes, 3000);
+});
+</script>
 {% endblock %}

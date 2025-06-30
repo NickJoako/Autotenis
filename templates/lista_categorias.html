@@ -1,37 +1,247 @@
 {% extends "base.html" %}
 {% block content %}
-  <h2>Categorías</h2>
-  <hr>
-  <table class="table">
-    <thead>
-      <tr>
-        <th>Nombre</th>
-        <th>Años de nacimiento</th>
-        <th>Edad</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for categoria in categorias %}
-      <tr>
-        <td>{{ categoria.nombre }}</td>
-        <td>{{ categoria.rango_anios_nacimiento }}</td>
-        <td>
-          {% if categoria.edad_minima and categoria.edad_maxima %}
-            {{ categoria.edad_minima }} - {{ categoria.edad_maxima }}
-          {% elif categoria.edad_minima %}
-            Desde {{ categoria.edad_minima }}
-          {% elif categoria.edad_maxima %}
-            Hasta {{ categoria.edad_maxima }}
-          {% else %}
-            Sin restricción
-          {% endif %}
-        </td>
-      </tr>
-      {% empty %}
-      <tr>
-        <td colspan="3">No hay categorías registradas.</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+<div class="container mt-4">
+  <div class="row">
+    <div class="col-md-12">
+      <h2><i class="fas fa-tags"></i> Categorías</h2>
+      <hr>
+      
+      <!-- Formulario para agregar nueva categoría -->
+      <div class="card mb-4">
+        <div class="card-header bg-primary text-white">
+          <h5 class="mb-0"><i class="fas fa-plus"></i> Agregar Nueva Categoría</h5>
+        </div>
+        <div class="card-body">
+          <form method="post">
+            {% csrf_token %}
+            <div class="row">
+              <div class="col-md-4">
+                <div class="form-group">
+                  <label for="{{ form.nombre.id_for_label }}" class="form-label">
+                    <i class="fas fa-tag"></i> Nombre de la Categoría
+                  </label>
+                  {{ form.nombre }}
+                  {% if form.nombre.errors %}
+                    <div class="text-danger small">
+                      {% for error in form.nombre.errors %}
+                        <div>{{ error }}</div>
+                      {% endfor %}
+                    </div>
+                  {% endif %}
+                </div>
+              </div>
+              
+              <div class="col-md-3">
+                <div class="form-group">
+                  <label for="{{ form.edad_minima.id_for_label }}" class="form-label">
+                    <i class="fas fa-hourglass-start"></i> Edad Mínima
+                  </label>
+                  {{ form.edad_minima }}
+                  {% if form.edad_minima.errors %}
+                    <div class="text-danger small">
+                      {% for error in form.edad_minima.errors %}
+                        <div>{{ error }}</div>
+                      {% endfor %}
+                    </div>
+                  {% endif %}
+                  <small class="form-text text-muted">Opcional (años)</small>
+                </div>
+              </div>
+              
+              <div class="col-md-3">
+                <div class="form-group">
+                  <label for="{{ form.edad_maxima.id_for_label }}" class="form-label">
+                    <i class="fas fa-hourglass-end"></i> Edad Máxima
+                  </label>
+                  {{ form.edad_maxima }}
+                  {% if form.edad_maxima.errors %}
+                    <div class="text-danger small">
+                      {% for error in form.edad_maxima.errors %}
+                        <div>{{ error }}</div>
+                      {% endfor %}
+                    </div>
+                  {% endif %}
+                  <small class="form-text text-muted">Opcional (años)</small>
+                </div>
+              </div>
+              
+              <div class="col-md-2 d-flex align-items-end">
+                <div class="form-group w-100">
+                  <button type="submit" name="agregar" class="btn btn-success w-100">
+                    <i class="fas fa-plus"></i> Agregar
+                  </button>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Mostrar errores generales del formulario -->
+            {% if form.non_field_errors %}
+              <div class="alert alert-danger mt-3">
+                {% for error in form.non_field_errors %}
+                  <div><i class="fas fa-exclamation-triangle"></i> {{ error }}</div>
+                {% endfor %}
+              </div>
+            {% endif %}
+          </form>
+        </div>
+      </div>
+      
+      <!-- Información de resumen -->
+      <div class="alert alert-info">
+        <i class="fas fa-info-circle"></i> 
+        <strong>Total de categorías:</strong> {{ total_categorias|default:0 }}
+        <br>
+        <small><i class="fas fa-lightbulb"></i> <strong>Tip:</strong> Las edades mínima y máxima son opcionales. Si no las especificas, la categoría será "Sin restricción de edad".</small>
+      </div>
+
+      <!-- Tabla de categorías existentes -->
+      <div class="card">
+        <div class="card-header bg-secondary text-white">
+          <h5 class="mb-0"><i class="fas fa-list"></i> Categorías Registradas</h5>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-striped table-hover mb-0">
+              <thead class="table-dark">
+                <tr>
+                  <th><i class="fas fa-tag"></i> Nombre</th>
+                  <th><i class="fas fa-calendar-alt"></i> Años de nacimiento</th>
+                  <th><i class="fas fa-birthday-cake"></i> Edad</th>
+                  <th><i class="fas fa-cog"></i> Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for categoria in categorias %}
+                <tr>
+                  <td>
+                    <strong>{{ categoria.nombre }}</strong>
+                  </td>
+                  <td>
+                    <span class="badge bg-primary">{{ categoria.rango_anios_nacimiento }}</span>
+                  </td>
+                  <td>
+                    {% if categoria.edad_minima and categoria.edad_maxima %}
+                      <span class="badge bg-success">{{ categoria.edad_minima }} - {{ categoria.edad_maxima }} años</span>
+                    {% elif categoria.edad_minima %}
+                      <span class="badge bg-info">Desde {{ categoria.edad_minima }} años</span>
+                    {% elif categoria.edad_maxima %}
+                      <span class="badge bg-warning">Hasta {{ categoria.edad_maxima }} años</span>
+                    {% else %}
+                      <span class="badge bg-secondary">Sin restricción</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    <form method="post" style="display: inline;" onsubmit="return confirm('¿Estás seguro de que deseas eliminar la categoría \'{{ categoria.nombre }}\'?');">
+                      {% csrf_token %}
+                      <input type="hidden" name="categoria_id" value="{{ categoria.id }}">
+                      <button type="submit" name="eliminar" class="btn btn-danger btn-sm">
+                        <i class="fas fa-trash"></i> Eliminar
+                      </button>
+                    </form>
+                  </td>
+                </tr>
+                {% empty %}
+                <tr>
+                  <td colspan="4" class="text-center text-muted py-4">
+                    <i class="fas fa-inbox fa-2x mb-2"></i>
+                    <br>
+                    No hay categorías registradas.
+                    <br>
+                    <small>Agrega tu primera categoría usando el formulario de arriba.</small>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Información adicional -->
+      <div class="mt-4">
+        <div class="row">
+          <div class="col-md-6">
+            <div class="card">
+              <div class="card-body">
+                <h6 class="card-title"><i class="fas fa-question-circle"></i> ¿Cómo funciona?</h6>
+                <ul class="list-unstyled small">
+                  <li><i class="fas fa-check text-success"></i> El <strong>nombre</strong> es obligatorio y debe ser único</li>
+                  <li><i class="fas fa-check text-success"></i> Las <strong>edades</strong> son opcionales y en años</li>
+                  <li><i class="fas fa-check text-success"></i> Si defines ambas edades, la mínima debe ser menor que la máxima</li>
+                  <li><i class="fas fa-check text-success"></i> Las categorías se ordenan automáticamente por edad mínima</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="card">
+              <div class="card-body">
+                <h6 class="card-title"><i class="fas fa-lightbulb"></i> Ejemplos</h6>
+                <ul class="list-unstyled small">
+                  <li><i class="fas fa-star text-warning"></i> <strong>Juvenil:</strong> 16-19 años</li>
+                  <li><i class="fas fa-star text-warning"></i> <strong>Adulto:</strong> 20-39 años</li>
+                  <li><i class="fas fa-star text-warning"></i> <strong>Veteranos:</strong> Desde 40 años</li>
+                  <li><i class="fas fa-star text-warning"></i> <strong>Libre:</strong> Sin restricción de edad</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Estilos adicionales -->
+<style>
+.form-control {
+  border-radius: 8px;
+}
+
+.btn {
+  border-radius: 8px;
+}
+
+.card {
+  border-radius: 12px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.badge {
+  font-size: 0.75em;
+}
+
+.table th {
+  border-top: none;
+  font-weight: 600;
+}
+
+.alert {
+  border-radius: 8px;
+}
+</style>
+
+<script>
+// Agregar clases de Bootstrap a los campos del formulario
+document.addEventListener('DOMContentLoaded', function() {
+    // Agregar clases a los inputs del formulario
+    const inputs = document.querySelectorAll('form input[type="text"], form input[type="number"]');
+    inputs.forEach(function(input) {
+        input.classList.add('form-control');
+        
+        // Agregar placeholders útiles
+        if (input.name === 'nombre') {
+            input.placeholder = 'Ej: Juvenil, Adulto, Veteranos...';
+        } else if (input.name === 'edad_minima') {
+            input.placeholder = 'Ej: 18';
+            input.min = '0';
+            input.max = '120';
+        } else if (input.name === 'edad_maxima') {
+            input.placeholder = 'Ej: 35';
+            input.min = '0';
+            input.max = '120';
+        }
+    });
+});
+</script>
 {% endblock %}

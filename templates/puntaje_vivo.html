@@ -1,0 +1,526 @@
+{% extends "base.html" %}
+{% load static %}
+{% block content %}
+<div class="container">
+    <h2>Puntaje en Vivo</h2>
+    <h4 class="text-muted mb-4">{{ torneo.nombre }}</h4>
+    
+    <!-- Información del partido -->
+    <div class="card mb-4">
+        <div class="card-header bg-primary text-white">
+            <h5 class="mb-0">
+                <i class="fas fa-play-circle"></i> 
+                Enfrentamiento {{ partido.llave_torneo.posicion }} - Ronda {{ partido.llave_torneo.ronda }}
+            </h5>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <p><strong>Árbitro:</strong> {{ partido.arbitro.first_name }} {{ partido.arbitro.last_name }}</p>
+                    <p><strong>Estado:</strong> 
+                        <span class="badge bg-{% if partido.estado_partido == 'jugado' %}success{% elif partido.estado_partido == 'en_curso' %}warning{% else %}secondary{% endif %}">
+                            {{ partido.get_estado_partido_display }}
+                        </span>
+                    </p>
+                </div>
+                <div class="col-md-6">
+                    {% if es_arbitro %}
+                        <div class="alert alert-info">
+                            <i class="fas fa-user-tie"></i> Eres el árbitro de este partido
+                        </div>
+                    {% elif es_organizador %}
+                        <div class="alert alert-warning">
+                            <i class="fas fa-crown"></i> Eres el organizador del torneo
+                        </div>
+                    {% else %}
+                        <div class="alert alert-secondary">
+                            <i class="fas fa-eye"></i> Modo espectador
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Marcador principal -->
+    <div class="row justify-content-center">
+        <div class="col-lg-10">
+            <div class="card">
+                <div class="card-header bg-success text-white text-center">
+                    <h4 class="mb-0">
+                        <i class="fas fa-trophy"></i> Marcador del Partido
+                    </h4>
+                </div>
+                <div class="card-body">
+                    <!-- Jugadores -->
+                    <div class="row text-center mb-4">
+                        <div class="col-5">
+                            <div class="card bg-light">
+                                <div class="card-body">
+                                    <h3 class="card-title text-primary">{{ partido.jugador1_nombre }}</h3>
+                                    <div class="display-1 text-primary" id="puntos-jugador1">0</div>
+                                    <p class="text-muted">Puntos</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-2 d-flex align-items-center justify-content-center">
+                            <span class="badge bg-secondary fs-3">VS</span>
+                        </div>
+                        <div class="col-5">
+                            <div class="card bg-light">
+                                <div class="card-body">
+                                    <h3 class="card-title text-danger">{{ partido.jugador2_nombre }}</h3>
+                                    <div class="display-1 text-danger" id="puntos-jugador2">0</div>
+                                    <p class="text-muted">Puntos</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Sets ganados -->
+                    <div class="row text-center mb-4">
+                        <div class="col-5">
+                            <h5>Sets Ganados</h5>
+                            <div class="badge bg-primary fs-4" id="sets-jugador1">0</div>
+                        </div>
+                        <div class="col-2"></div>
+                        <div class="col-5">
+                            <h5>Sets Ganados</h5>
+                            <div class="badge bg-danger fs-4" id="sets-jugador2">0</div>
+                        </div>
+                    </div>
+
+                    <!-- Controles para árbitro -->
+                    {% if puede_controlar %}
+                    <div class="border-top pt-4">
+                        <h5 class="text-center mb-3">
+                            <i class="fas fa-gamepad"></i> Controles de Árbitro
+                        </h5>
+                        
+                        <!-- Botones de puntos -->
+                        <div class="row mb-3">
+                            <div class="col-6 text-center">
+                                <h6>{{ partido.jugador1_nombre }}</h6>
+                                <div class="btn-group" role="group">
+                                    <button type="button" class="btn btn-success" onclick="sumarPunto(1)">
+                                        <i class="fas fa-plus"></i> Punto
+                                    </button>
+                                    <button type="button" class="btn btn-outline-danger" onclick="restarPunto(1)">
+                                        <i class="fas fa-minus"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="col-6 text-center">
+                                <h6>{{ partido.jugador2_nombre }}</h6>
+                                <div class="btn-group" role="group">
+                                    <button type="button" class="btn btn-success" onclick="sumarPunto(2)">
+                                        <i class="fas fa-plus"></i> Punto
+                                    </button>
+                                    <button type="button" class="btn btn-outline-danger" onclick="restarPunto(2)">
+                                        <i class="fas fa-minus"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Botones para ganar set -->
+                        <div class="row">
+                            <div class="col-6 text-center">
+                                <button type="button" class="btn btn-warning" onclick="ganarSet(1)" id="btn-set-jugador1">
+                                    <i class="fas fa-trophy"></i> Ganar Set
+                                </button>
+                            </div>
+                            <div class="col-6 text-center">
+                                <button type="button" class="btn btn-warning" onclick="ganarSet(2)" id="btn-set-jugador2">
+                                    <i class="fas fa-trophy"></i> Ganar Set
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Estado del juego -->
+                        <div class="mt-3">
+                            <div class="alert alert-info text-center" id="estado-juego">
+                                Esperando primer punto...
+                            </div>
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-info text-center">
+                        <i class="fas fa-info-circle"></i> 
+                        Visualizando partido en vivo. Solo el árbitro puede modificar el marcador.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- NUEVO: Mensaje de confirmación -->
+{% if partido.pendiente_confirmacion %}
+    <div class="row justify-content-center mt-4" id="confirmacion-container">
+        <div class="col-lg-8">
+            {% if es_organizador %}
+                <div class="card border-warning">
+                    <div class="card-header bg-warning text-dark">
+                        <h5 class="mb-0">
+                            <i class="fas fa-exclamation-triangle"></i> 
+                            Confirmación Requerida
+                        </h5>
+                    </div>
+                    <div class="card-body text-center">
+                        <p class="mb-3">El árbitro ha completado el partido. ¿Confirmas el resultado?</p>
+                        <p><strong>Ganador:</strong> {{ partido.ganador.nombre }} {{ partido.ganador.apellido }}</p>
+                        <form method="post" action="{% url 'confirmar_resultado_partido' torneo.id partido.id %}" style="display: inline;">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-success btn-lg me-2">
+                                <i class="fas fa-check"></i> Confirmar y Cerrar Partido
+                            </button>
+                        </form>
+                        <a href="{% url 'registrar_resultado' torneo.id partido.id %}" class="btn btn-warning btn-lg">
+                            <i class="fas fa-edit"></i> Modificar Resultado
+                        </a>
+                    </div>
+                </div>
+            {% else %}
+                <div class="alert alert-info text-center">
+                    <h5><i class="fas fa-clock"></i> Esperando Confirmación</h5>
+                    <p class="mb-0">El resultado ha sido enviado al organizador para confirmación.</p>
+                    <p class="mb-0"><strong>Ganador provisional:</strong> {{ partido.ganador.nombre }} {{ partido.ganador.apellido }}</p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+{% endif %}
+
+    <!-- Botones de navegación -->
+    <div class="text-center mt-4">
+        <a href="{% url 'iniciar_partidos' torneo.id %}" class="btn btn-primary">
+            <i class="fas fa-arrow-left"></i> Volver a Enfrentamientos
+        </a>
+        {% if puede_controlar %}
+        <a href="{% url 'registrar_resultado' torneo.id partido.id %}" class="btn btn-success">
+            <i class="fas fa-save"></i> Finalizar y Registrar Resultado
+        </a>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+// Variables globales para el marcador
+let puntos1 = 0;
+let puntos2 = 0;
+let sets1 = 0;
+let sets2 = 0;
+let partidoId = {{ partido.id }};
+let puedeControlar = {{ puede_controlar|yesno:"true,false" }};
+
+// WebSocket para tiempo real
+let partidoSocket = null;
+
+// Inicializar WebSocket
+function inicializarWebSocket() {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const socketUrl = `${protocol}//${window.location.host}/ws/partido/${partidoId}/`;
+    
+    console.log('Intentando conectar WebSocket a:', socketUrl);
+    console.log('Partido ID:', partidoId);
+    
+    try {
+        partidoSocket = new WebSocket(socketUrl);
+        console.log('WebSocket creado exitosamente');
+        
+        partidoSocket.onopen = function(e) {
+            console.log('✓ WebSocket conectado exitosamente');
+            document.getElementById('connection-status').textContent = 'Conectado';
+            document.getElementById('connection-status').parentElement.className = 'alert alert-success mt-3';
+            
+            // Solicitar estado actual del partido
+            partidoSocket.send(JSON.stringify({
+                'type': 'get_status'
+            }));
+        };
+        
+        partidoSocket.onmessage = function(e) {
+            console.log('Mensaje recibido del WebSocket:', e.data);
+            const data = JSON.parse(e.data);
+            
+            if (data.type === 'partido_status' || data.type === 'partido_update') {
+                actualizarMarcadorDesdeWebSocket(data.data);
+            }
+        };
+        
+        partidoSocket.onclose = function(e) {
+            console.log('WebSocket desconectado. Código:', e.code, 'Razón:', e.reason);
+            document.getElementById('connection-status').textContent = 'Reconectando...';
+            document.getElementById('connection-status').parentElement.className = 'alert alert-warning mt-3';
+            setTimeout(inicializarWebSocket, 3000);
+        };
+        
+        partidoSocket.onerror = function(e) {
+            console.error('❌ Error en WebSocket:', e);
+            document.getElementById('connection-status').textContent = 'Error de conexión';
+            document.getElementById('connection-status').parentElement.className = 'alert alert-danger mt-3';
+        };
+    } catch (error) {
+        console.error('❌ Error al crear WebSocket:', error);
+    }
+}
+
+// Actualizar marcador desde WebSocket
+function actualizarMarcadorDesdeWebSocket(data) {
+    if (!data) return;
+    
+    puntos1 = data.jugador1.puntos;
+    puntos2 = data.jugador2.puntos;
+    sets1 = data.jugador1.sets;
+    sets2 = data.jugador2.sets;
+    
+    actualizarMarcador();
+    
+    // Mostrar notificación si el partido terminó
+    if (data.finalizado && data.ganador) {
+        mostrarResultadoFinal(data.ganador);
+    }
+}
+
+// Funciones de control (solo para árbitros)
+function sumarPunto(jugador) {
+    if (!puedeControlar) {
+        alert('Solo el árbitro puede controlar el marcador');
+        return;
+    }
+    actualizarPuntosServidor('sumar', jugador);
+}
+
+function restarPunto(jugador) {
+    if (!puedeControlar) {
+        alert('Solo el árbitro puede controlar el marcador');
+        return;
+    }
+    actualizarPuntosServidor('restar', jugador);
+}
+
+function actualizarPuntosServidor(accion, jugador) {
+    fetch(`/arbitros/partido/${partidoId}/actualizar-puntos/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+        },
+        body: JSON.stringify({
+            'accion': accion,
+            'jugador': jugador
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (!data.success) {
+            alert('Error: ' + data.message);
+        }
+        // Los puntos se actualizarán automáticamente via WebSocket
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error al actualizar puntos. Intente nuevamente.');
+    });
+}
+// Funciones para actualizar la interfaz
+function actualizarMarcador() {
+    document.getElementById('puntos-jugador1').textContent = puntos1;
+    document.getElementById('puntos-jugador2').textContent = puntos2;
+    document.getElementById('sets-jugador1').textContent = sets1;
+    document.getElementById('sets-jugador2').textContent = sets2;
+    
+    actualizarEstadoJuego();
+    if (puedeControlar) {
+        actualizarBotonesSet();
+    }
+}
+
+function puedeGanarSet(jugador) {
+    let puntosJugador = jugador === 1 ? puntos1 : puntos2;
+    let puntosOponente = jugador === 1 ? puntos2 : puntos1;
+    let diferencia = puntosJugador - puntosOponente;
+    
+    // Reglas de tenis de mesa
+    // Caso 1: Victoria normal (11 vs menos de 10)
+    if (puntosJugador === 11 && puntosOponente < 10) {
+        return true;
+    }
+    
+    // Caso 2: Victoria en deuce (ambos >= 10 y exactamente 2 de diferencia)
+    if (puntosJugador >= 10 && puntosOponente >= 10 && diferencia === 2) {
+        return true;
+    }
+    
+    return false;
+}
+
+function actualizarEstadoJuego() {
+    let estado = '';
+    let maxPuntos = Math.max(puntos1, puntos2);
+    let diferencia = Math.abs(puntos1 - puntos2);
+    
+    if (puedeGanarSet(1)) {
+        estado = `¡{{ partido.jugador1_nombre }} puede ganar el set! Marcador: ${puntos1}-${puntos2}`;
+    } else if (puedeGanarSet(2)) {
+        estado = `¡{{ partido.jugador2_nombre }} puede ganar el set! Marcador: ${puntos1}-${puntos2}`;
+    } else if (maxPuntos >= 10 && diferencia < 2) {
+        estado = `Empate ${puntos1}-${puntos2} - Se necesitan 2 puntos de diferencia`;
+    } else if (maxPuntos >= 10 && diferencia === 1) {
+        estado = `Set point - Marcador: ${puntos1}-${puntos2} (falta 1 punto para terminar)`;
+    } else {
+        estado = `En progreso - Marcador: ${puntos1}-${puntos2}`;
+    }
+    
+    // Información del partido
+    estado += ` | Sets: ${sets1}-${sets2}`;
+    
+    const estadoElement = document.getElementById('estado-juego');
+    if (estadoElement) {
+        estadoElement.textContent = estado;
+    }
+}
+
+function actualizarBotonesSet() {
+    let btn1 = document.getElementById('btn-set-jugador1');
+    let btn2 = document.getElementById('btn-set-jugador2');
+    
+    if (btn1 && btn2) {
+        btn1.disabled = !puedeGanarSet(1);
+        btn2.disabled = !puedeGanarSet(2);
+    }
+}
+
+function mostrarResultadoFinal(ganador) {
+    // Crear modal o alerta para mostrar el resultado final
+    const alertDiv = document.createElement('div');
+    alertDiv.className = 'alert alert-success alert-dismissible fade show position-fixed top-0 start-50 translate-middle-x mt-3';
+    alertDiv.style.zIndex = '9999';
+    alertDiv.innerHTML = `
+        <h4 class="alert-heading"><i class="fas fa-trophy"></i> ¡Partido Finalizado!</h4>
+        <p><strong>Ganador: ${ganador}</strong></p>
+        <p class="mb-0">Marcador final: ${sets1} - ${sets2}</p>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    `;
+    document.body.appendChild(alertDiv);
+    
+    // Auto-remover después de 10 segundos
+    setTimeout(() => {
+        if (alertDiv.parentNode) {
+            alertDiv.parentNode.removeChild(alertDiv);
+        }
+    }, 10000);
+}
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+// Inicializar cuando carga la página
+document.addEventListener('DOMContentLoaded', function() {
+    actualizarMarcador();
+    inicializarWebSocket();
+    
+    // Mostrar indicador de conexión
+    const container = document.querySelector('.container');
+    const statusDiv = document.createElement('div');
+    statusDiv.className = 'alert alert-info mt-3';
+    statusDiv.innerHTML = `
+        <i class="fas fa-wifi"></i> 
+        <strong>Puntaje en tiempo real:</strong> 
+        <span id="connection-status">Conectando...</span>
+    `;
+    container.insertBefore(statusDiv, container.children[1]);
+    
+    // Actualizar estado de conexión
+    setTimeout(() => {
+        if (partidoSocket && partidoSocket.readyState === WebSocket.OPEN) {
+            document.getElementById('connection-status').innerHTML = '<span class="text-success">Conectado ✓</span>';
+        } else {
+            document.getElementById('connection-status').innerHTML = '<span class="text-warning">Reconectando...</span>';
+        }
+    }, 1000);
+});
+
+// **NUEVO: Verificación en tiempo real del estado del partido**
+function verificarEstadoPartido() {
+    fetch(`/torneos/{{ torneo.id }}/partido/{{ partido.id }}/estado-ajax/`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                console.error('Error:', data.error);
+                return;
+            }
+            
+            // **NUEVO: Verificar si el partido se cerró completamente**
+            if (data.estado_partido === 'jugado') {
+                // El partido fue cerrado por el organizador, redirigir a enfrentamientos
+                alert('El partido ha sido confirmado y cerrado por el organizador.');
+                window.location.href = `/torneos/{{ torneo.id }}/iniciar-partidos/`;
+                return;
+            }
+            
+            // Verificar si cambió el estado de confirmación
+            const confirmacionDiv = document.getElementById('confirmacion-container');
+            
+            if (data.pendiente_confirmacion && !confirmacionDiv) {
+                // El partido ahora está pendiente de confirmación, recargar para mostrar el mensaje
+                location.reload();
+            } else if (!data.pendiente_confirmacion && confirmacionDiv) {
+                // El partido ya no está pendiente, recargar para ocultar el mensaje
+                location.reload();
+            }
+        })
+        .catch(error => {
+            console.error('Error verificando estado:', error);
+        });
+}
+
+// Verificar cada 3 segundos
+setInterval(verificarEstadoPartido, 3000);
+
+// Limpiar WebSocket al salir de la página
+window.addEventListener('beforeunload', function() {
+    if (partidoSocket) {
+        partidoSocket.close();
+    }
+});
+</script>
+
+<style>
+.display-1 {
+    font-weight: bold;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+}
+
+.card {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.btn-group .btn {
+    border-radius: 0;
+}
+
+.btn-group .btn:first-child {
+    border-top-left-radius: 0.375rem;
+    border-bottom-left-radius: 0.375rem;
+}
+
+.btn-group .btn:last-child {
+    border-top-right-radius: 0.375rem;
+    border-bottom-right-radius: 0.375rem;
+}
+</style>
+{% endblock %}
